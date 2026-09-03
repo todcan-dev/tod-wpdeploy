@@ -79,10 +79,24 @@ tod site list              # domain, linux user, db, redis index, php, created
 tod site list --verbose    # + disk usage and cert expiry
 ```
 
-`tod` is just a thin dispatcher — `tod setup`, `tod site create`, and
-`tod site list` call `setup-server.sh`, `create-site.sh`, and
-`list-sites.sh` directly, so the raw scripts still work exactly the same
-if you prefer them (`./create-site.sh example.com --dry-run`, etc.).
+### 4. Delete a site
+
+```bash
+tod site delete example.com
+```
+
+Permanently removes everything `create-site.sh` created for that domain —
+Linux user, files, database, PHP-FPM pool, nginx vhost, TLS certificate,
+Redis cache data — and drops the registry entry. Not reversible; there's
+no backup step. Prompts you to type the domain to confirm (skip with
+`--yes` for scripting); add `--dry-run` to see exactly what would be
+removed first.
+
+`tod` is just a thin dispatcher — `tod setup`, `tod site create`,
+`tod site delete`, and `tod site list` call `setup-server.sh`,
+`create-site.sh`, `delete-site.sh`, and `list-sites.sh` directly, so the
+raw scripts still work exactly the same if you prefer them
+(`./create-site.sh example.com --dry-run`, etc.).
 
 ## Isolation model
 
@@ -106,9 +120,10 @@ if you prefer them (`./create-site.sh example.com --dry-run`, etc.).
 ## Files
 
 - `install.sh` — one-command installer (clones the repo, puts `tod` on PATH).
-- `tod` — command dispatcher (`tod setup` / `tod site create` / `tod site list`).
+- `tod` — command dispatcher (`tod setup` / `tod site create` / `tod site delete` / `tod site list`).
 - `setup-server.sh` — one-time server bootstrap.
 - `create-site.sh` — provisions one isolated site.
+- `delete-site.sh` — permanently removes one site.
 - `list-sites.sh` — reads `/etc/wpdeploy/sites.list`.
 - `templates/php-fpm-pool.conf.template` — PHP-FPM pool, filled in per site.
 - `templates/nginx-vhost-http.conf.template` — vhost used before a cert exists.

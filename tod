@@ -4,7 +4,7 @@ set -euo pipefail
 # wpdeploy :: tod — thin command dispatcher, mirroring WordOps' `wo` UX.
 # Every subcommand just execs the matching script sitting next to this
 # one; all the real logic lives there. See setup-server.sh / create-site.sh
-# / list-sites.sh --help for flags.
+# / list-sites.sh / delete-site.sh --help for flags.
 
 SELF="$(readlink -f "${BASH_SOURCE[0]}")"
 DIR="$(cd "$(dirname "$SELF")" && pwd)"
@@ -13,13 +13,22 @@ usage() {
     cat <<EOF
 tod — wpdeploy command line
 
-  tod setup [--php-version 8.3] [--acme-email you@example.com] [--mysql-root-password 'secret']
+  tod setup [--php-version 8.3] [--acme-email you@example.com]
+            [--mysql-root-password 'secret']
+            [--admin-user name] [--admin-email you@example.com]
       Bootstrap this server. Run once, as root. Safe to re-run.
+      --admin-user/--admin-email set the default WP admin every site
+      created afterward uses, unless overridden on 'tod site create'.
 
   tod site create <domain> [--title "..."] [--admin-user name]
                             [--admin-email you@example.com]
                             [--admin-password 'secret'] [--dry-run]
       Provision an isolated WordPress site. Run as root.
+
+  tod site delete <domain> [--yes] [--dry-run]
+      Permanently remove a site: Linux user, files, database, PHP-FPM
+      pool, nginx vhost, TLS certificate, Redis cache data. Not
+      reversible. Prompts for typed confirmation unless --yes is given.
 
   tod site list [--verbose]
       List provisioned sites.
@@ -43,12 +52,16 @@ case "$1" in
                 shift
                 exec "$DIR/create-site.sh" "$@"
                 ;;
+            delete)
+                shift
+                exec "$DIR/delete-site.sh" "$@"
+                ;;
             list)
                 shift
                 exec "$DIR/list-sites.sh" "$@"
                 ;;
             *)
-                echo "Usage: tod site <create|list> ..." >&2
+                echo "Usage: tod site <create|delete|list> ..." >&2
                 exit 1
                 ;;
         esac

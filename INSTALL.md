@@ -49,7 +49,7 @@ If the repo is private, or you'd rather do it by hand:
 apt-get update -qq && apt-get install -y git
 git clone git@github.com:todcan-dev/tod-wpdeploy.git /opt/wpdeploy   # or the https:// URL
 cd /opt/wpdeploy
-chmod +x setup-server.sh create-site.sh list-sites.sh tod
+chmod +x setup-server.sh create-site.sh delete-site.sh list-sites.sh tod
 ln -sf "$(pwd)/tod" /usr/local/bin/tod
 ```
 
@@ -206,21 +206,57 @@ tod site list
 tod site list --verbose   # + disk usage per site and cert expiry date
 ```
 
+## 7. Delete a site
+
+```bash
+tod site delete example.com
+```
+
+This is permanent: it removes the Linux user (and every file in
+`/var/www/example.com`), drops the MariaDB database and user, deletes
+the PHP-FPM pool and nginx vhost, revokes and removes the TLS
+certificate, flushes that site's Redis DB index (so the next site to
+reuse that index doesn't inherit stale cache data), and drops the
+registry entry. There's no backup step — back up anything you need
+first.
+
+It shows you exactly what's about to be deleted, then asks you to type
+the domain name to confirm:
+
+```
+This will permanently delete:
+  Linux user:       example_com (and /var/www/example.com, including all files)
+  Database:         wp_example_com (and its user) -- all site data
+  PHP-FPM pool:      /etc/php/8.3/fpm/pool.d/example_com.conf
+  Nginx vhost:       /etc/nginx/sites-available/example.com
+  TLS certificate:   /etc/nginx/ssl/example.com (and /root/.acme.sh/example.com)
+  Redis DB index:    0 (flushed, freed for reuse)
+  Registry entry:    example.com in /etc/wpdeploy/sites.list
+
+This cannot be undone. No backup is taken.
+Type the domain to confirm deletion:
+```
+
+Want to see that plan without deleting anything? `tod site delete
+example.com --dry-run`. Scripting this and don't want the prompt?
+`tod site delete example.com --yes`.
+
 ## Command reference
 
 ```
 tod setup [--php-version 8.3] [--acme-email you@example.com] [--mysql-root-password 'secret']
           [--admin-user name] [--admin-email you@example.com]
 tod site create <domain> [--title "..."] [--admin-user name] [--admin-email you@example.com] [--admin-password 'secret'] [--dry-run]
+tod site delete <domain> [--yes] [--dry-run]
 tod site list [--verbose]
 tod help
 ```
 
-`tod` is a thin dispatcher — `tod setup`, `tod site create`, and
-`tod site list` just call `setup-server.sh`, `create-site.sh`, and
-`list-sites.sh` respectively. The raw scripts (`./create-site.sh
-example.com --dry-run`, etc.) work exactly the same if you ever want to
-call them directly.
+`tod` is a thin dispatcher — `tod setup`, `tod site create`,
+`tod site delete`, and `tod site list` just call `setup-server.sh`,
+`create-site.sh`, `delete-site.sh`, and `list-sites.sh` respectively. The
+raw scripts (`./create-site.sh example.com --dry-run`, etc.) work exactly
+the same if you ever want to call them directly.
 
 ## Troubleshooting
 
@@ -232,9 +268,8 @@ call them directly.
   retry.
 - **"'<domain>' is already provisioned"** — it's in
   `/etc/wpdeploy/sites.list` already. Check `tod site list`. To
-  re-provision from scratch you'd need to remove that line and manually
-  clean up the Linux user, database, pool file, and vhost — there's no
-  `tod site delete` (out of scope for this tool by design).
+  re-provision from scratch, remove it first: `tod site delete
+  example.com`.
 - **Lost/forgot a generated admin password** — it was only ever printed
   once. Reset it with:
   `sudo -u <linux_user> wp --path=/var/www/<domain>/htdocs user update <admin_user> --user_pass='newpassword'`

@@ -36,7 +36,7 @@ else
 fi
 
 chmod +x "$INSTALL_DIR"/setup-server.sh "$INSTALL_DIR"/create-site.sh \
-    "$INSTALL_DIR"/list-sites.sh "$INSTALL_DIR"/tod
+    "$INSTALL_DIR"/delete-site.sh "$INSTALL_DIR"/list-sites.sh "$INSTALL_DIR"/tod
 ln -sf "$INSTALL_DIR/tod" /usr/local/bin/tod
 
 log "wpdeploy installed at $INSTALL_DIR. 'tod' is on your PATH."
