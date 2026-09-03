@@ -18,6 +18,7 @@ MYSQL_ROOT_PASSWORD=""
 ADMIN_USER=""
 ADMIN_EMAIL=""
 SSH_ALLOW_IP=""
+DISABLE_PASSWORD_AUTH=""
 
 log()  { printf '\n\033[1;32m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33mWARN:\033[0m %s\n' "$*" >&2; }
@@ -29,16 +30,18 @@ Usage: sudo ./setup-server.sh [--php-version 8.3] [--acme-email you@example.com]
                                [--mysql-root-password 'secret']
                                [--admin-user name] [--admin-email you@example.com]
                                [--ssh-allow-ip <ip-or-cidr>|any]
+                               [--disable-password-auth yes|no]
 
 Bootstraps this server for wpdeploy: nginx, PHP-FPM, MariaDB, Redis,
 WP-CLI, acme.sh, ufw, fail2ban. Run once per server. Safe to re-run.
 
 Run it from a real terminal and it prompts for whatever wasn't passed as
 a flag: WordPress admin username/email (the default every
-'tod site create' uses afterward) and whether to restrict SSH to your
-current IP. Piped/non-interactive runs skip all prompts and fall back to
-flag values or safe defaults (SSH stays open to everyone unless
---ssh-allow-ip is given).
+'tod site create' uses afterward), whether to restrict SSH to your
+current IP, and whether to disable SSH password login (key-only).
+Piped/non-interactive runs skip all prompts and fall back to flag values
+or safe defaults (SSH stays open, password login stays enabled, unless
+told otherwise).
 
 --admin-user/--admin-email set the server-wide default WordPress admin
 identity: every 'tod site create' afterward uses them unless overridden
@@ -48,6 +51,11 @@ per-site with its own --admin-user/--admin-email.
 whole internet; pass 'any' to explicitly leave it open. If that address
 ever changes, you'll need console access from your VPS provider to get
 back in -- re-run with --ssh-allow-ip any (or the new address) to fix it.
+
+--disable-password-auth yes turns off SSH password login, key-only from
+then on. Refuses to do this (and leaves password login enabled) if it
+can't find an authorized SSH key for the account you connected as --
+add a key first, then re-run with this flag.
 EOF
     exit 0
 }
@@ -60,6 +68,7 @@ while [[ $# -gt 0 ]]; do
         --admin-user) ADMIN_USER="$2"; shift 2 ;;
         --admin-email) ADMIN_EMAIL="$2"; shift 2 ;;
         --ssh-allow-ip) SSH_ALLOW_IP="$2"; shift 2 ;;
+        --disable-password-auth) DISABLE_PASSWORD_AUTH="$2"; shift 2 ;;
         -h|--help) usage ;;
         *) die "Unknown argument: $1 (see --help)" ;;
     esac
@@ -108,11 +117,33 @@ if [[ -t 0 ]]; then
             read -rp "Restrict SSH (port 22) to an IP/CIDR? Leave blank to allow from anywhere [${PREV_SSH_ALLOW_IP:-any}]: " SSH_ALLOW_IP || true
         fi
     fi
+    if [[ -z "$DISABLE_PASSWORD_AUTH" ]]; then
+        read -rp "Disable SSH password login (key-only)? Make sure '${SUDO_USER:-root}' already has an SSH key set up first -- this can lock you out otherwise. [Y/n]: " pw_answer || true
+        case "${pw_answer,,}" in
+            ""|y|yes) DISABLE_PASSWORD_AUTH="yes" ;;
+            *)        DISABLE_PASSWORD_AUTH="no" ;;
+        esac
+    fi
 fi
 
 ADMIN_USER="${ADMIN_USER:-${DEFAULT_ADMIN_USER:-admin}}"
 ADMIN_EMAIL="${ADMIN_EMAIL:-$DEFAULT_ADMIN_EMAIL}"
 SSH_ALLOW_IP="${SSH_ALLOW_IP:-${PREV_SSH_ALLOW_IP:-any}}"
+DISABLE_PASSWORD_AUTH="${DISABLE_PASSWORD_AUTH:-no}"
+
+# Hard safety gate, applied regardless of how "yes" was reached (prompt or
+# --disable-password-auth flag): only ever disable password login if the
+# account that would lose it already has an authorized key. Otherwise a
+# "yes" here is an immediate, unrecoverable-short-of-provider-console
+# lockout, so refuse and explain rather than trusting the answer blindly.
+if [[ "$DISABLE_PASSWORD_AUTH" == "yes" ]]; then
+    KEY_USER="${SUDO_USER:-root}"
+    KEY_HOME="$(getent passwd "$KEY_USER" 2>/dev/null | cut -d: -f6)"
+    if [[ -z "$KEY_HOME" || ! -s "$KEY_HOME/.ssh/authorized_keys" ]]; then
+        warn "No authorized SSH key found for '$KEY_USER' (~/.ssh/authorized_keys is empty or missing) -- leaving password login enabled so you don't get locked out. Add a key, then re-run: sudo tod setup --disable-password-auth yes"
+        DISABLE_PASSWORD_AUTH="no"
+    fi
+fi
 ACME_EMAIL="${ACME_EMAIL:-$ADMIN_EMAIL}"
 
 if [[ "$SSH_ALLOW_IP" != "any" ]]; then
@@ -299,6 +330,41 @@ ufw default deny incoming >/dev/null
 ufw default allow outgoing >/dev/null
 ufw --force enable >/dev/null
 INSTALLED+=("ufw: SSH restricted to $SSH_ALLOW_IP; 80, 443 open; deny everything else")
+
+# --- SSH key-only login -------------------------------------------------------
+if [[ "$DISABLE_PASSWORD_AUTH" == "yes" ]]; then
+    log "Disabling SSH password authentication (key-only login)"
+    # \s+\S (not just \b) matters here: sshd_config's own comments include
+    # prose like "# PasswordAuthentication.  Depending on your PAM..." --
+    # requiring a value to directly follow keeps this from matching that.
+    if grep -qE '^\s*#?\s*PasswordAuthentication\s+\S' /etc/ssh/sshd_config; then
+        sed -i 's/^\s*#\?\s*PasswordAuthentication\s\+\S.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+    else
+        echo "PasswordAuthentication no" >> /etc/ssh/sshd_config
+    fi
+    # Ubuntu cloud images commonly ship a drop-in (e.g. 50-cloud-init.conf)
+    # that sets "PasswordAuthentication yes". sshd_config Include's
+    # sshd_config.d/*.conf near the top of the file, and OpenSSH keeps the
+    # FIRST value it encounters for a directive -- so an unpatched drop-in
+    # would silently win over the edit above. Patch every drop-in that sets
+    # it, not just the main file.
+    if [[ -d /etc/ssh/sshd_config.d ]]; then
+        find /etc/ssh/sshd_config.d -maxdepth 1 -name '*.conf' \
+            -exec grep -lE '^\s*PasswordAuthentication\s+yes' {} \; 2>/dev/null \
+            | while read -r f; do
+                sed -i 's/^\s*PasswordAuthentication\s\+yes/PasswordAuthentication no/' "$f"
+            done
+    fi
+    if /usr/sbin/sshd -t; then
+        systemctl reload ssh
+        INSTALLED+=("SSH: password login disabled, key-only")
+    else
+        warn "sshd config test failed -- NOT reloading, so password auth is still whatever it was before. Check /etc/ssh/sshd_config manually."
+        INSTALLED+=("SSH: password-disable attempted but sshd config test failed -- check manually")
+    fi
+else
+    INSTALLED+=("SSH: password login left enabled")
+fi
 
 # --- fail2ban -------------------------------------------------------------------
 log "Configuring fail2ban (sshd + nginx)"

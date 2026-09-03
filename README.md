@@ -35,8 +35,9 @@ sudo ./setup-server.sh
 Run it from a real terminal (i.e. over SSH, not piped) and it asks, like
 WordOps does: your WordPress admin username and email (the default every
 `tod site create` uses afterward — same idea as WordOps' global config),
-and whether to restrict SSH to the IP you're currently connecting from.
-Answer once and you never have to retype either for future sites.
+whether to restrict SSH to the IP you're currently connecting from, and
+whether to disable SSH password login (key-only from then on). Answer
+once and you never have to retype any of it for future sites.
 
 Prefer flags, or running it unattended? Everything above can be passed
 directly and no prompt fires for whatever's already given:
@@ -44,7 +45,7 @@ directly and no prompt fires for whatever's already given:
 ```bash
 sudo ./setup-server.sh --php-version 8.3 --acme-email you@example.com \
     --admin-user yourname --admin-email you@example.com \
-    --ssh-allow-ip 203.0.113.5
+    --ssh-allow-ip 203.0.113.5 --disable-password-auth yes
 ```
 
 Installs and configures nginx, PHP-FPM, MariaDB, Redis, WP-CLI, acme.sh,
@@ -60,6 +61,14 @@ internet — pass `any` to explicitly leave it open. **If that address ever
 changes you'll be locked out of SSH** until you fix it from your VPS
 provider's web console; re-run `tod setup --ssh-allow-ip <new-ip>` (or
 `any`) once you're back in.
+
+`--disable-password-auth yes` turns off SSH password login entirely —
+key-only from then on, which closes off brute-forcing/leaked-password
+attacks far more effectively than the IP restriction alone. It **refuses**
+to do this (and leaves password login enabled) if it can't find an
+authorized SSH key for the account you connected as, so this can't lock
+you out by itself the way the IP restriction can — but you still need a
+working key before you say yes.
 
 ### 2. Create a site (per site)
 
@@ -144,7 +153,9 @@ raw scripts still work exactly the same if you prefer them
 - **Firewall / brute-force**: ufw allows only 80/443 to everyone, plus 22
   — restricted to one IP/CIDR by default (`tod setup` asks for it, or set
   it with `--ssh-allow-ip`; pass `any` to leave SSH open to everyone).
-  fail2ban watches sshd and nginx on top of that.
+  `tod setup` also offers to disable SSH password login entirely
+  (`--disable-password-auth yes`), refusing unless it finds an authorized
+  key already in place. fail2ban watches sshd and nginx on top of that.
 
 ## Files
 

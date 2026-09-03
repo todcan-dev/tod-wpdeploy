@@ -59,13 +59,14 @@ ln -sf "$(pwd)/tod" /usr/local/bin/tod
 sudo tod setup
 ```
 
-You're at a real terminal (you SSH'd in), so it asks you two things,
+You're at a real terminal (you SSH'd in), so it asks you a few things,
 like WordOps does:
 
 ```
 WordPress admin username for new sites [admin]:
 WordPress admin email for new sites, also used for Let's Encrypt notices [none]:
 Restrict SSH (port 22) to your current IP (203.0.113.5)? [Y/n, or type a different IP/CIDR]:
+Disable SSH password login (key-only)? Make sure 'ubuntu' already has an SSH key set up first -- this can lock you out otherwise. [Y/n]:
 ```
 
 - **Admin username/email** become the **server-wide default WordPress
@@ -83,6 +84,15 @@ Restrict SSH (port 22) to your current IP (203.0.113.5)? [Y/n, or type a differe
   `sudo tod setup --ssh-allow-ip <new-ip>` (or `--ssh-allow-ip any` to
   open it back up) once you're back in. If you're not sure your IP is
   stable, answer `n` here and rely on fail2ban instead.
+- **SSH key-only login**: offers to turn off password login entirely,
+  which matters more than the IP restriction for actually stopping
+  brute-force/credential-stuffing attacks. It checks whether the account
+  you're connected as already has an SSH key authorized *before* doing
+  anything — if it doesn't find one, it refuses and leaves password login
+  enabled no matter what you answer, so this specific step can't lock you
+  out by itself. Say `y` only once you know you can already log in with a
+  key (if you set up your VPS with key-based access from the start, which
+  is the normal flow, you're already covered).
 
 Prefer to skip the prompts? Pass any of these as flags and that prompt
 won't fire — useful for the installer running unattended, or if you just
@@ -91,12 +101,12 @@ want a one-liner:
 ```bash
 sudo tod setup --php-version 8.3 --acme-email you@example.com \
     --admin-user yourname --admin-email you@example.com \
-    --ssh-allow-ip 203.0.113.5
+    --ssh-allow-ip 203.0.113.5 --disable-password-auth yes
 ```
 
 (Piped/non-interactive runs — e.g. inside another script — skip every
 prompt automatically and fall back to flag values or safe defaults: SSH
-stays open to everyone unless `--ssh-allow-ip` is given.)
+stays open and password login stays enabled unless told otherwise.)
 
 What this does, in order:
 
@@ -113,13 +123,17 @@ What this does, in order:
 5. Configures `ufw`: HTTP (80) and HTTPS (443) open to everyone, SSH (22)
    restricted to whatever you answered above (or open to everyone if you
    said no / passed `--ssh-allow-ip any`).
-6. Configures `fail2ban` to watch SSH and nginx auth logs for brute-force
+6. If you said yes to key-only login (and a key was found for your
+   account), disables SSH password authentication in `/etc/ssh/sshd_config`
+   — patching any provider-shipped drop-in under `/etc/ssh/sshd_config.d/`
+   that would otherwise override it — and reloads `ssh`.
+7. Configures `fail2ban` to watch SSH and nginx auth logs for brute-force
    attempts.
-7. Creates `/etc/wpdeploy/sites.list`, the registry every site gets
+8. Creates `/etc/wpdeploy/sites.list`, the registry every site gets
    appended to, and writes your answers to `/etc/wpdeploy/config` —
    before any real installation work starts, so a re-run after a failed
    step doesn't re-ask what you already answered.
-8. Re-links `tod` into `/usr/local/bin/tod` (already done if you used
+9. Re-links `tod` into `/usr/local/bin/tod` (already done if you used
    `install.sh`; this makes the manual-clone path work the same way).
 
 The MariaDB root password is the one thing never prompted for — it's
@@ -332,6 +346,13 @@ the same if you ever want to call them directly.
   `sudo tod setup --ssh-allow-ip any` to open port 22 back up, or
   `sudo tod setup --ssh-allow-ip <your-new-ip>` to point it at the
   right address.
+- **Locked out of SSH after disabling password login** — this shouldn't
+  happen (`tod setup` refuses to disable it unless it already found a
+  working key for your account), but if it does: through the VPS
+  provider's web console, edit `/etc/ssh/sshd_config` and set
+  `PasswordAuthentication yes`, then `sudo systemctl reload ssh`. Check
+  `/etc/ssh/sshd_config.d/*.conf` too — a provider-shipped drop-in there
+  can override the main file.
 - **`tod: command not found`** — either `setup-server.sh` hasn't been run
   yet, or you're not in a shell that's picked up `/usr/local/bin` (it's
   in the default `$PATH` on Ubuntu, so this usually just means step 3

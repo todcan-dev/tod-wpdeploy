@@ -17,14 +17,18 @@ tod — wpdeploy command line
             [--mysql-root-password 'secret']
             [--admin-user name] [--admin-email you@example.com]
             [--ssh-allow-ip <ip-or-cidr>|any]
+            [--disable-password-auth yes|no]
       Bootstrap this server. Run once, as root. Safe to re-run.
       Run from a real terminal and it prompts for whatever wasn't passed
-      as a flag (admin username/email, SSH lockdown IP); piped/CI runs
-      skip prompts and use flags or safe defaults.
+      as a flag (admin username/email, SSH lockdown IP, SSH key-only
+      login); piped/CI runs skip prompts and use flags or safe defaults.
       --admin-user/--admin-email set the default WP admin every site
       created afterward uses, unless overridden on 'tod site create'.
       --ssh-allow-ip restricts SSH to one IP/CIDR instead of the whole
       internet; pass 'any' to leave it open.
+      --disable-password-auth yes turns off SSH password login (key-only
+      from then on) -- refuses to if it can't find an authorized key for
+      the account you connected as, so you can't lock yourself out.
 
   tod site create <domain> [--title "..."] [--admin-user name]
                             [--admin-email you@example.com]
