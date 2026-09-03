@@ -6,6 +6,9 @@ stack — just three scripts that give every site its own Linux user,
 PHP-FPM pool, database, and Redis DB index, with a Let's Encrypt
 certificate that's never optional.
 
+> Full step-by-step walkthrough (VPS setup through your first WordPress
+> site, with explanations and troubleshooting): [INSTALL.md](INSTALL.md).
+
 ## Install
 
 ```bash
