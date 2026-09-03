@@ -36,8 +36,9 @@ Installs and configures nginx, PHP-FPM, MariaDB, Redis, WP-CLI, acme.sh,
 ufw, and fail2ban — and, as its last step, symlinks `tod` into
 `/usr/local/bin/tod` so it's available everywhere from here on. Idempotent
 — re-run any time to pick up interrupted steps; it won't break an existing
-setup. If you omit `--mysql-root-password`, you'll be prompted for one (or
-it'll generate one) the first time only; it's stored at
+setup. Never prompts for anything — the MariaDB root password (and every
+per-site DB/admin password later) is auto-generated unless you pass
+`--mysql-root-password` yourself; it's stored once at
 `/etc/wpdeploy/.mysql_root`, readable by root only.
 
 ### 2. Create a site (per site)

@@ -5,9 +5,8 @@ set -euo pipefail
 # One-command installer: gets wpdeploy onto this machine and puts `tod`
 # on your PATH. Mirrors WordOps' `wget wo && sudo bash wo` pattern —
 # download this file first, then run it, rather than piping curl straight
-# into bash. That keeps stdin free for setup-server.sh's interactive
-# MariaDB-password prompt later, and means a truncated download fails
-# loudly instead of executing a half-downloaded script.
+# into bash, so a truncated download fails loudly instead of executing a
+# half-downloaded script.
 #
 #   curl -fsSL https://raw.githubusercontent.com/todcan-dev/tod-wpdeploy/main/install.sh -o install.sh
 #   sudo bash install.sh

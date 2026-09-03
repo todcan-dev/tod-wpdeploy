@@ -41,8 +41,7 @@ sudo bash install.sh
 
 (Downloads to a file first, then runs it — same reasoning as WordOps'
 `wget wo && sudo bash wo`: a truncated download fails loudly instead of
-silently executing, and it keeps your terminal's stdin free for the
-MariaDB password prompt in the next step.)
+silently executing.)
 
 If the repo is private, or you'd rather do it by hand:
 
@@ -79,11 +78,14 @@ What this does, in order:
 8. Re-links `tod` into `/usr/local/bin/tod` (already done if you used
    `install.sh`; this makes the manual-clone path work the same way).
 
-It'll prompt you for a MariaDB root password if you don't pass
-`--mysql-root-password 'something'` — just press Enter to have it
-generate a strong one for you. That password is written once to
-`/etc/wpdeploy/.mysql_root`, readable by root only; `tod site create`
-reads it from there automatically, you don't need to remember it.
+Nothing here is interactive — like WordOps, every credential is
+generated for you, never asked for. The MariaDB root password is
+auto-generated unless you pass `--mysql-root-password 'something'`
+yourself, and written once to `/etc/wpdeploy/.mysql_root` (readable by
+root only). `tod site create` reads it from there automatically, and
+generates its own random per-site database password and (unless you pass
+`--admin-password`) WordPress admin password the same way — you never
+have to type or invent a password anywhere in this process.
 
 At the end it prints a summary of everything installed. **This step is
 safe to re-run** — if it fails partway (a flaky apt mirror, a network

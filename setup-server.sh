@@ -122,11 +122,10 @@ if [[ -f "$MYSQL_ROOT_PW_FILE" ]]; then
 fi
 
 if [[ ! -f "$MYSQL_ROOT_PW_FILE" ]]; then
-    if [[ -z "$MYSQL_ROOT_PASSWORD" ]]; then
-        read -rsp "Set MariaDB root password (leave blank to auto-generate): " input_pw
-        echo
-        MYSQL_ROOT_PASSWORD="${input_pw:-$(openssl rand -base64 24)}"
-    fi
+    # Auto-generated unless --mysql-root-password was passed -- no prompt,
+    # so this step never blocks waiting for input (matches every other
+    # generated credential in wpdeploy: never asked, always generated).
+    MYSQL_ROOT_PASSWORD="${MYSQL_ROOT_PASSWORD:-$(openssl rand -base64 24)}"
     # DROP USER is used (rather than editing mysql.user directly) because it
     # works regardless of MariaDB's internal grant-table layout for a given
     # version, and IF EXISTS keeps this idempotent.
