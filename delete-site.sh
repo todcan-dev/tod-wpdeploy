@@ -66,7 +66,11 @@ POOL_FILE="/etc/php/${PHP_VERSION}/fpm/pool.d/${LINUX_USER}.conf"
 VHOST_FILE="/etc/nginx/sites-available/$DOMAIN"
 VHOST_LINK="/etc/nginx/sites-enabled/$DOMAIN"
 SSL_DIR="/etc/nginx/ssl/$DOMAIN"
+# acme.sh names the domain's storage dir "<domain>_ecc" for an ECC cert
+# (its current default when --keylength isn't given) or plain "<domain>"
+# for RSA -- remove whichever one it actually used.
 ACME_CERT_DIR="$ACME_HOME/$DOMAIN"
+ACME_CERT_DIR_ECC="$ACME_HOME/${DOMAIN}_ecc"
 
 cat <<EOF
 
@@ -75,7 +79,7 @@ This will permanently delete:
   Database:         $DB_NAME (and its user) -- all site data
   PHP-FPM pool:      $POOL_FILE
   Nginx vhost:       $VHOST_FILE
-  TLS certificate:   $SSL_DIR (and $ACME_CERT_DIR)
+  TLS certificate:   $SSL_DIR (and $ACME_CERT_DIR or $ACME_CERT_DIR_ECC)
   Redis instance:    redis-server@$LINUX_USER (stopped and removed)
   Registry entry:    $DOMAIN in $SITES_LIST
 
@@ -113,7 +117,7 @@ log "Revoking and removing the TLS certificate"
 if [[ -x "$ACME_HOME/acme.sh" ]]; then
     "$ACME_HOME/acme.sh" --remove -d "$DOMAIN" >/dev/null 2>&1 || true
 fi
-rm -rf "$ACME_CERT_DIR" "$SSL_DIR"
+rm -rf "$ACME_CERT_DIR" "$ACME_CERT_DIR_ECC" "$SSL_DIR"
 
 log "Dropping the database and database user"
 if [[ -f "$MYSQL_ROOT_PW_FILE" ]]; then
@@ -142,7 +146,13 @@ fi
 rm -rf "$SITE_BASE"
 
 log "Removing the registry entry"
-grep -v "^${DOMAIN}|" "$SITES_LIST" > "$SITES_LIST.tmp" && mv "$SITES_LIST.tmp" "$SITES_LIST"
+# Not grep -v > tmp && mv: when this is the only site left, grep -v
+# matches nothing, exits 1 (its normal "no output" signal, not a real
+# error), and under set -e that kills the && chain before mv ever runs
+# -- confirmed live, this silently aborted the script right here and
+# left the stale entry in place. sed -i's exit status doesn't depend on
+# whether anything matched, so it can't hit the same trap.
+sed -i "/^${DOMAIN}|/d" "$SITES_LIST"
 
 if (( ${#FAILED[@]} > 0 )); then
     warn "'$DOMAIN' was removed from the registry, but some cleanup steps need manual attention:"
