@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# errtrace: without it, a failure inside a shell function (die(), below)
+# does not run the ERR trap that drives the rollback in cleanup() further
+# down -- confirmed empirically, this is a real bash gotcha, not a style
+# preference. See the comment on die() for the matching half of this fix.
+set -o errtrace
 
 # wpdeploy :: create-site.sh <domain>
 # Provisions one fully isolated WordPress site: dedicated Linux user,
@@ -24,7 +29,14 @@ DOMAIN_ARG=""
 
 log()  { printf '\n\033[1;32m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33mWARN:\033[0m %s\n' "$*" >&2; }
-die()  { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
+# Ends with `false`, not `exit 1`: an explicit exit does NOT trigger the
+# ERR trap (confirmed empirically), so it would silently skip the
+# rollback in cleanup() below. Letting the failure propagate naturally
+# through set -e is what makes the trap fire. This only works because
+# every call site here is a plain top-level command, an if/case branch,
+# or the last part of a `cmd || die ...` chain -- never inside a command
+# substitution, where this same failure would NOT stop the script.
+die()  { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; false; }
 
 usage() {
     cat <<EOF
