@@ -94,6 +94,15 @@ Disable SSH password login (key-only)? Make sure 'ubuntu' already has an SSH key
   key (if you set up your VPS with key-based access from the start, which
   is the normal flow, you're already covered).
 
+There's a fifth thing this can set, but it's not prompted for since
+there's no universal default: `--default-plugins "slug-a,slug-b"` (any
+wordpress.org plugin slugs, comma-separated) get installed and activated
+on every site `tod site create` makes afterward, on top of the Redis
+object cache it always installs. Akismet and Hello Dolly are always
+removed from every new site regardless of this setting — if you ever
+want to keep one, edit `REMOVE_DEFAULT_PLUGINS` at the top of
+`create-site.sh`.
+
 Prefer to skip the prompts? Pass any of these as flags and that prompt
 won't fire — useful for the installer running unattended, or if you just
 want a one-liner:
@@ -101,7 +110,8 @@ want a one-liner:
 ```bash
 sudo tod setup --php-version 8.3 --acme-email you@example.com \
     --admin-user yourname --admin-email you@example.com \
-    --ssh-allow-ip 203.0.113.5 --disable-password-auth yes
+    --ssh-allow-ip 203.0.113.5 --disable-password-auth yes \
+    --default-plugins "classic-editor,wp-mail-smtp"
 ```
 
 (Piped/non-interactive runs — e.g. inside another script — skip every
@@ -205,11 +215,13 @@ and so on, then exits.
 8. Requests a Let's Encrypt certificate via acme.sh (this is the step
    that needs working DNS) and rewrites the vhost to serve HTTPS with an
    HTTP→HTTPS redirect.
-9. Downloads and installs WordPress via WP-CLI, wires up the DB and Redis
-   object cache constants in `wp-config.php` (written one directory above
-   `htdocs/`, not inside it — WordPress and WP-CLI both look there
-   automatically, so this needs no special `--path` handling), and
-   installs + activates the Redis object cache plugin.
+9. Downloads WordPress via WP-CLI (removing Akismet and Hello Dolly
+   immediately), wires up the DB and Redis object cache constants in
+   `wp-config.php` (written one directory above `htdocs/`, not inside it
+   — WordPress and WP-CLI both look there automatically, so this needs
+   no special `--path` handling), installs + activates the Redis object
+   cache plugin, then installs + activates whatever `--default-plugins`
+   was set to (if anything).
 10. Appends the site to `/etc/wpdeploy/sites.list`.
 
 `wp-config.php` deliberately lives in the site root, not inside

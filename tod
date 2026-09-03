@@ -18,6 +18,7 @@ tod — wpdeploy command line
             [--admin-user name] [--admin-email you@example.com]
             [--ssh-allow-ip <ip-or-cidr>|any]
             [--disable-password-auth yes|no]
+            [--default-plugins "slug-a,slug-b"]
       Bootstrap this server. Run once, as root. Safe to re-run.
       Run from a real terminal and it prompts for whatever wasn't passed
       as a flag (admin username/email, SSH lockdown IP, SSH key-only
@@ -29,6 +30,9 @@ tod — wpdeploy command line
       --disable-password-auth yes turns off SSH password login (key-only
       from then on) -- refuses to if it can't find an authorized key for
       the account you connected as, so you can't lock yourself out.
+      --default-plugins is a comma-separated list of wordpress.org slugs
+      installed and activated on every site created afterward, on top of
+      the Redis object cache. Akismet and Hello Dolly are always removed.
 
   tod site create <domain> [--title "..."] [--admin-user name]
                             [--admin-email you@example.com]

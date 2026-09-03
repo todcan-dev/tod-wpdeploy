@@ -19,6 +19,7 @@ ADMIN_USER=""
 ADMIN_EMAIL=""
 SSH_ALLOW_IP=""
 DISABLE_PASSWORD_AUTH=""
+PLUGINS=""
 
 log()  { printf '\n\033[1;32m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33mWARN:\033[0m %s\n' "$*" >&2; }
@@ -31,6 +32,7 @@ Usage: sudo ./setup-server.sh [--php-version 8.3] [--acme-email you@example.com]
                                [--admin-user name] [--admin-email you@example.com]
                                [--ssh-allow-ip <ip-or-cidr>|any]
                                [--disable-password-auth yes|no]
+                               [--default-plugins "slug-a,slug-b"]
 
 Bootstraps this server for wpdeploy: nginx, PHP-FPM, MariaDB, Redis,
 WP-CLI, acme.sh, ufw, fail2ban. Run once per server. Safe to re-run.
@@ -56,6 +58,14 @@ back in -- re-run with --ssh-allow-ip any (or the new address) to fix it.
 then on. Refuses to do this (and leaves password login enabled) if it
 can't find an authorized SSH key for the account you connected as --
 add a key first, then re-run with this flag.
+
+--default-plugins is a comma-separated list of wordpress.org plugin
+slugs installed and activated on every site 'tod site create' makes
+afterward, on top of the Redis object cache it always installs. Not
+prompted for -- there's no universal default here, so it's flag-only.
+Akismet and Hello Dolly are always removed from every new site; edit
+REMOVE_DEFAULT_PLUGINS at the top of create-site.sh if you ever want to
+keep one.
 EOF
     exit 0
 }
@@ -69,6 +79,7 @@ while [[ $# -gt 0 ]]; do
         --admin-email) ADMIN_EMAIL="$2"; shift 2 ;;
         --ssh-allow-ip) SSH_ALLOW_IP="$2"; shift 2 ;;
         --disable-password-auth) DISABLE_PASSWORD_AUTH="$2"; shift 2 ;;
+        --default-plugins) PLUGINS="$2"; shift 2 ;;
         -h|--help) usage ;;
         *) die "Unknown argument: $1 (see --help)" ;;
     esac
@@ -82,6 +93,7 @@ done
 # fallback resolution below with no prompts at all.
 DEFAULT_ADMIN_USER=""
 DEFAULT_ADMIN_EMAIL=""
+DEFAULT_PLUGINS=""
 PREV_SSH_ALLOW_IP=""
 # shellcheck source=/dev/null
 [[ -f "$CONFIG_FILE" ]] && source "$CONFIG_FILE"
@@ -130,6 +142,7 @@ ADMIN_USER="${ADMIN_USER:-${DEFAULT_ADMIN_USER:-admin}}"
 ADMIN_EMAIL="${ADMIN_EMAIL:-$DEFAULT_ADMIN_EMAIL}"
 SSH_ALLOW_IP="${SSH_ALLOW_IP:-${PREV_SSH_ALLOW_IP:-any}}"
 DISABLE_PASSWORD_AUTH="${DISABLE_PASSWORD_AUTH:-no}"
+DEFAULT_PLUGINS="${PLUGINS:-$DEFAULT_PLUGINS}"
 
 # Hard safety gate, applied regardless of how "yes" was reached (prompt or
 # --disable-password-auth flag): only ever disable password login if the
@@ -164,10 +177,12 @@ INSTALLED+=("Registry: $WPDEPLOY_DIR (sites.list)")
 {
     [[ -n "$ADMIN_USER" ]] && echo "DEFAULT_ADMIN_USER='$ADMIN_USER'"
     [[ -n "$ADMIN_EMAIL" ]] && echo "DEFAULT_ADMIN_EMAIL='$ADMIN_EMAIL'"
+    [[ -n "$DEFAULT_PLUGINS" ]] && echo "DEFAULT_PLUGINS='$DEFAULT_PLUGINS'"
     echo "PREV_SSH_ALLOW_IP='$SSH_ALLOW_IP'"
 } > "$CONFIG_FILE"
 chmod 644 "$CONFIG_FILE"
 [[ -n "$ADMIN_USER" || -n "$ADMIN_EMAIL" ]] && INSTALLED+=("Default WP admin for new sites: ${ADMIN_USER:-admin} <${ADMIN_EMAIL:-not set}>")
+[[ -n "$DEFAULT_PLUGINS" ]] && INSTALLED+=("Default plugins for new sites: $DEFAULT_PLUGINS")
 
 log "Updating apt package index"
 apt-get update -qq

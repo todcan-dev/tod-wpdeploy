@@ -20,6 +20,11 @@ ACME="/root/.acme.sh/acme.sh"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEMPLATE_DIR="$SCRIPT_DIR/templates"
 
+# Bundled with every WP core download, useful to approximately nobody
+# running a self-managed stack. Edit this list directly if you ever want
+# to keep one -- there's no flag for it, it's not worth the plumbing.
+REMOVE_DEFAULT_PLUGINS=(akismet hello)
+
 DRY_RUN=0
 TITLE=""
 ADMIN_USER=""
@@ -123,6 +128,7 @@ TITLE="${TITLE:-$DOMAIN}"
 # time). A --admin-user/--admin-email flag on this command always wins.
 DEFAULT_ADMIN_USER=""
 DEFAULT_ADMIN_EMAIL=""
+DEFAULT_PLUGINS=""
 # shellcheck source=/dev/null
 [[ -f "$CONFIG_FILE" ]] && source "$CONFIG_FILE"
 ADMIN_USER="${ADMIN_USER:-${DEFAULT_ADMIN_USER:-admin}}"
@@ -337,6 +343,7 @@ WP="sudo -u $LINUX_USER -H wp --path=$SITE_DIR"
 
 log "Downloading WordPress core"
 $WP core download --quiet
+$WP plugin delete "${REMOVE_DEFAULT_PLUGINS[@]}" --quiet 2>/dev/null || true
 
 log "Writing wp-config.php (DB + Redis object cache constants)"
 $WP config create --dbname="$DB_NAME" --dbuser="$DB_USER" --dbpass="$DB_PASSWORD" \
@@ -363,6 +370,12 @@ $WP core install --url="https://$DOMAIN" --title="$TITLE" \
 log "Installing and enabling the Redis object cache"
 $WP plugin install redis-cache --activate --quiet
 $WP redis enable --quiet
+
+if [[ -n "$DEFAULT_PLUGINS" ]]; then
+    log "Installing default plugins: $DEFAULT_PLUGINS"
+    IFS=',' read -ra PLUGIN_ARR <<< "$DEFAULT_PLUGINS"
+    $WP plugin install "${PLUGIN_ARR[@]}" --activate --quiet
+fi
 
 # --- 11. Register the site -----------------------------------------------
 
