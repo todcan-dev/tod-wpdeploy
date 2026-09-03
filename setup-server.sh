@@ -85,7 +85,18 @@ if [[ -t 0 ]]; then
         read -rp "WordPress admin email for new sites, also used for Let's Encrypt notices [${DEFAULT_ADMIN_EMAIL:-none}]: " ADMIN_EMAIL || true
     fi
     if [[ -z "$SSH_ALLOW_IP" ]]; then
+        # $SSH_CLIENT is almost never present here: this script always runs
+        # via sudo, and sudo's default env_reset strips it before we ever
+        # see it. Fall back to `who`, keyed on $SUDO_USER (which sudo does
+        # preserve) -- that reads the connecting address straight out of
+        # utmp, independent of what sudo does to the environment.
         DETECTED_IP="$(awk '{print $1}' <<<"${SSH_CLIENT:-}")"
+        if [[ -z "$DETECTED_IP" && -n "${SUDO_USER:-}" ]]; then
+            DETECTED_IP="$(who | awk -v u="$SUDO_USER" '$1==u { for(i=1;i<=NF;i++) if ($i ~ /^\(.*\)$/) { gsub(/[()]/,"",$i); print $i; exit } }')"
+        fi
+        # who prints "(:0)" for a local console login, not a real address --
+        # only trust something IP-shaped, otherwise treat it as undetected.
+        [[ "$DETECTED_IP" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || DETECTED_IP=""
         if [[ -n "$DETECTED_IP" ]]; then
             read -rp "Restrict SSH (port 22) to your current IP ($DETECTED_IP)? [Y/n, or type a different IP/CIDR]: " ssh_answer || true
             case "${ssh_answer,,}" in
