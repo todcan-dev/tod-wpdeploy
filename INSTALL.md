@@ -56,8 +56,17 @@ ln -sf "$(pwd)/tod" /usr/local/bin/tod
 ## 3. Run the one-time server bootstrap
 
 ```bash
-sudo tod setup --php-version 8.3 --acme-email you@example.com
+sudo tod setup --php-version 8.3 --acme-email you@example.com \
+    --admin-user yourname --admin-email you@example.com
 ```
+
+`--admin-user`/`--admin-email` here matter more than they look: they set
+the **server-wide default WordPress admin identity**. If you're the one
+provisioning every site (the common case), set them once here and never
+type them again — every `tod site create` afterward uses this admin
+automatically, the same way WordOps' global config works. You can still
+override per-site with `--admin-user`/`--admin-email` on `tod site
+create` itself, for the rare site that needs a different admin.
 
 What this does, in order:
 
@@ -77,6 +86,8 @@ What this does, in order:
    appended to.
 8. Re-links `tod` into `/usr/local/bin/tod` (already done if you used
    `install.sh`; this makes the manual-clone path work the same way).
+9. If `--admin-user`/`--admin-email` were given, writes them to
+   `/etc/wpdeploy/config` as the default every `tod site create` reads.
 
 Nothing here is interactive — like WordOps, every credential is
 generated for you, never asked for. The MariaDB root password is
@@ -98,22 +109,28 @@ Make sure DNS for the domain is already pointing at this server (see
 "Before you start"), then:
 
 ```bash
-tod site create example.com \
-    --title "My Example Site" \
-    --admin-user editor \
-    --admin-email you@example.com
+tod site create example.com --title "My Example Site"
 ```
 
 (Still need `sudo` in front if you're not logged in as root:
 `sudo tod site create example.com ...`.)
+
+Notice there's no `--admin-user`/`--admin-email` here — they come from
+the server-wide default you set in step 3. Only pass them again if this
+particular site needs a different admin than your default:
+
+```bash
+tod site create example.com --title "My Example Site" \
+    --admin-user someone-else --admin-email someone-else@example.com
+```
 
 Flags (all optional except the domain):
 
 | Flag | Default | Notes |
 |---|---|---|
 | `--title` | the domain name | Site title shown in WordPress |
-| `--admin-user` | `admin` | WordPress admin username |
-| `--admin-email` | `admin@<domain>` | WordPress admin email |
+| `--admin-user` | server-wide default (`tod setup --admin-user`), or `admin` if none was set | WordPress admin username |
+| `--admin-email` | server-wide default (`tod setup --admin-email`), or `admin@<domain>` if none was set | WordPress admin email |
 | `--admin-password` | auto-generated | If omitted, a random 16-char password is generated and printed once at the end — **copy it down immediately**, it's not saved anywhere |
 
 Want to see exactly what it *would* do first, without touching anything?
@@ -170,8 +187,8 @@ Visit `https://example.com/wp-admin/` and log in with those credentials.
 Same command, different domain — just repeat step 4 for each one:
 
 ```bash
-tod site create second-site.com --admin-email you@example.com
-tod site create third-site.com --admin-email you@example.com
+tod site create second-site.com
+tod site create third-site.com
 ```
 
 Each one gets fully isolated resources; a compromise on one site can't
@@ -193,6 +210,7 @@ tod site list --verbose   # + disk usage per site and cert expiry date
 
 ```
 tod setup [--php-version 8.3] [--acme-email you@example.com] [--mysql-root-password 'secret']
+          [--admin-user name] [--admin-email you@example.com]
 tod site create <domain> [--title "..."] [--admin-user name] [--admin-email you@example.com] [--admin-password 'secret'] [--dry-run]
 tod site list [--verbose]
 tod help
@@ -222,6 +240,10 @@ call them directly.
   `sudo -u <linux_user> wp --path=/var/www/<domain>/htdocs user update <admin_user> --user_pass='newpassword'`
 - **Need the MariaDB root password** — `sudo cat /etc/wpdeploy/.mysql_root`
   (root only).
+- **Change the server-wide default admin later** — just re-run
+  `tod setup --admin-user newname --admin-email newname@example.com`
+  (or edit `/etc/wpdeploy/config` directly). It only affects sites
+  created afterward, not ones already provisioned.
 - **`tod: command not found`** — either `setup-server.sh` hasn't been run
   yet, or you're not in a shell that's picked up `/usr/local/bin` (it's
   in the default `$PATH` on Ubuntu, so this usually just means step 3

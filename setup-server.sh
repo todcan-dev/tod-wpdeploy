@@ -8,12 +8,15 @@ set -euo pipefail
 WPDEPLOY_DIR="/etc/wpdeploy"
 SITES_LIST="$WPDEPLOY_DIR/sites.list"
 MYSQL_ROOT_PW_FILE="$WPDEPLOY_DIR/.mysql_root"
+CONFIG_FILE="$WPDEPLOY_DIR/config"
 ACME_HOME="/root/.acme.sh"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 PHP_VERSION="8.3"
 ACME_EMAIL=""
 MYSQL_ROOT_PASSWORD=""
+ADMIN_USER=""
+ADMIN_EMAIL=""
 
 log()  { printf '\n\033[1;32m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33mWARN:\033[0m %s\n' "$*" >&2; }
@@ -21,10 +24,16 @@ die()  { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 
 usage() {
     cat <<EOF
-Usage: sudo ./setup-server.sh [--php-version 8.3] [--acme-email you@example.com] [--mysql-root-password 'secret']
+Usage: sudo ./setup-server.sh [--php-version 8.3] [--acme-email you@example.com]
+                               [--mysql-root-password 'secret']
+                               [--admin-user name] [--admin-email you@example.com]
 
 Bootstraps this server for wpdeploy: nginx, PHP-FPM, MariaDB, Redis,
 WP-CLI, acme.sh, ufw, fail2ban. Run once per server. Safe to re-run.
+
+--admin-user/--admin-email set the server-wide default WordPress admin
+identity: every 'tod site create' afterward uses them unless overridden
+per-site with its own --admin-user/--admin-email.
 EOF
     exit 0
 }
@@ -34,6 +43,8 @@ while [[ $# -gt 0 ]]; do
         --php-version) PHP_VERSION="$2"; shift 2 ;;
         --acme-email) ACME_EMAIL="$2"; shift 2 ;;
         --mysql-root-password) MYSQL_ROOT_PASSWORD="$2"; shift 2 ;;
+        --admin-user) ADMIN_USER="$2"; shift 2 ;;
+        --admin-email) ADMIN_EMAIL="$2"; shift 2 ;;
         -h|--help) usage ;;
         *) die "Unknown argument: $1 (see --help)" ;;
     esac
@@ -230,6 +241,25 @@ INSTALLED+=("fail2ban: sshd + nginx-http-auth jails enabled")
 if [[ -x "$SCRIPT_DIR/tod" ]]; then
     ln -sf "$SCRIPT_DIR/tod" /usr/local/bin/tod
     INSTALLED+=("tod command: linked into /usr/local/bin/tod (tod help)")
+fi
+
+# --- Server-wide WordPress admin default -------------------------------------
+# Only touched when at least one of the two flags is given, so a re-run
+# for something else (e.g. just picking up a new PHP extension) never
+# clobbers a default set earlier.
+if [[ -n "$ADMIN_USER" || -n "$ADMIN_EMAIL" ]]; then
+    DEFAULT_ADMIN_USER=""
+    DEFAULT_ADMIN_EMAIL=""
+    # shellcheck source=/dev/null
+    [[ -f "$CONFIG_FILE" ]] && source "$CONFIG_FILE"
+    ADMIN_USER="${ADMIN_USER:-$DEFAULT_ADMIN_USER}"
+    ADMIN_EMAIL="${ADMIN_EMAIL:-$DEFAULT_ADMIN_EMAIL}"
+    {
+        echo "DEFAULT_ADMIN_USER='$ADMIN_USER'"
+        echo "DEFAULT_ADMIN_EMAIL='$ADMIN_EMAIL'"
+    } > "$CONFIG_FILE"
+    chmod 644 "$CONFIG_FILE"
+    INSTALLED+=("Default WP admin for new sites: $ADMIN_USER <$ADMIN_EMAIL>")
 fi
 
 log "Setup complete"

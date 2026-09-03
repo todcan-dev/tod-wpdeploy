@@ -29,7 +29,8 @@ set up — no need to remember individual script paths.
 ### 1. Bootstrap the server (once)
 
 ```bash
-sudo ./setup-server.sh --php-version 8.3 --acme-email you@example.com
+sudo ./setup-server.sh --php-version 8.3 --acme-email you@example.com \
+    --admin-user yourname --admin-email you@example.com
 ```
 
 Installs and configures nginx, PHP-FPM, MariaDB, Redis, WP-CLI, acme.sh,
@@ -41,16 +42,23 @@ per-site DB/admin password later) is auto-generated unless you pass
 `--mysql-root-password` yourself; it's stored once at
 `/etc/wpdeploy/.mysql_root`, readable by root only.
 
+`--admin-user`/`--admin-email` here are the WordPress admin identity
+**every site will use by default** — the same idea as WordOps' global
+config. Set them once and every `tod site create` afterward just uses
+them; you only pass `--admin-user`/`--admin-email` again if a specific
+site needs a different admin.
+
 ### 2. Create a site (per site)
 
 Point the domain's DNS at this server first, then:
 
 ```bash
-sudo tod site create example.com \
-    --title "Example Site" \
-    --admin-user editor \
-    --admin-email you@example.com
+sudo tod site create example.com --title "Example Site"
 ```
+
+That's it — admin user/email come from the server-wide default set in
+step 1. Override per-site if you need to:
+`tod site create example.com --admin-user someone-else --admin-email someone-else@example.com`.
 
 Omit `--admin-password` and one is generated and printed once at the end
 (it isn't stored anywhere else). Add `--dry-run` to see the full plan
@@ -107,6 +115,8 @@ if you prefer them (`./create-site.sh example.com --dry-run`, etc.).
 - `templates/nginx-vhost-ssl.conf.template` — vhost swapped in after issuance.
 - `/etc/wpdeploy/sites.list` — the registry:
   `domain|linux_user|db_name|redis_index|php_version|created_date`
+- `/etc/wpdeploy/config` — server-wide defaults (`DEFAULT_ADMIN_USER`,
+  `DEFAULT_ADMIN_EMAIL`), set via `tod setup --admin-user/--admin-email`.
 
 ## Not included, on purpose
 

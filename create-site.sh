@@ -10,13 +10,14 @@ set -euo pipefail
 WPDEPLOY_DIR="/etc/wpdeploy"
 SITES_LIST="$WPDEPLOY_DIR/sites.list"
 MYSQL_ROOT_PW_FILE="$WPDEPLOY_DIR/.mysql_root"
+CONFIG_FILE="$WPDEPLOY_DIR/config"
 ACME="/root/.acme.sh/acme.sh"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEMPLATE_DIR="$SCRIPT_DIR/templates"
 
 DRY_RUN=0
 TITLE=""
-ADMIN_USER="admin"
+ADMIN_USER=""
 ADMIN_EMAIL=""
 ADMIN_PASSWORD=""
 DOMAIN_ARG=""
@@ -35,6 +36,10 @@ Provisions an isolated WordPress site at <domain> with its own Linux user,
 PHP-FPM pool, MariaDB database, Redis DB index, nginx vhost, and a
 mandatory Let's Encrypt certificate. DNS for <domain> must already point
 at this server.
+
+--admin-user/--admin-email default to whatever was set with
+'tod setup --admin-user ... --admin-email ...'; pass them here only to
+override that default for one site.
 EOF
     exit 0
 }
@@ -100,7 +105,17 @@ VHOST_LINK="/etc/nginx/sites-enabled/$DOMAIN"
 SSL_DIR="/etc/nginx/ssl/$DOMAIN"
 
 TITLE="${TITLE:-$DOMAIN}"
-ADMIN_EMAIL="${ADMIN_EMAIL:-admin@$DOMAIN}"
+
+# Server-wide admin defaults set by 'tod setup --admin-user/--admin-email'
+# (one person provisioning many sites doesn't want to retype these every
+# time). A --admin-user/--admin-email flag on this command always wins.
+DEFAULT_ADMIN_USER=""
+DEFAULT_ADMIN_EMAIL=""
+# shellcheck source=/dev/null
+[[ -f "$CONFIG_FILE" ]] && source "$CONFIG_FILE"
+ADMIN_USER="${ADMIN_USER:-${DEFAULT_ADMIN_USER:-admin}}"
+ADMIN_EMAIL="${ADMIN_EMAIL:-${DEFAULT_ADMIN_EMAIL:-admin@$DOMAIN}}"
+
 GENERATED_ADMIN_PASSWORD=0
 if [[ -z "$ADMIN_PASSWORD" ]]; then
     ADMIN_PASSWORD="$(openssl rand -base64 18 | tr -dc 'A-Za-z0-9' | cut -c1-16)"
