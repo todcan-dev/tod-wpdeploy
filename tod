@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# wpdeploy :: tod — thin command dispatcher, mirroring WordOps' `wo` UX.
+# Every subcommand just execs the matching script sitting next to this
+# one; all the real logic lives there. See setup-server.sh / create-site.sh
+# / list-sites.sh --help for flags.
+
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+DIR="$(cd "$(dirname "$SELF")" && pwd)"
+
+usage() {
+    cat <<EOF
+tod — wpdeploy command line
+
+  tod setup [--php-version 8.3] [--acme-email you@example.com] [--mysql-root-password 'secret']
+      Bootstrap this server. Run once, as root. Safe to re-run.
+
+  tod site create <domain> [--title "..."] [--admin-user name]
+                            [--admin-email you@example.com]
+                            [--admin-password 'secret'] [--dry-run]
+      Provision an isolated WordPress site. Run as root.
+
+  tod site list [--verbose]
+      List provisioned sites.
+
+  tod help
+      Show this message.
+EOF
+}
+
+[[ $# -gt 0 ]] || { usage; exit 1; }
+
+case "$1" in
+    setup)
+        shift
+        exec "$DIR/setup-server.sh" "$@"
+        ;;
+    site)
+        shift
+        case "${1:-}" in
+            create)
+                shift
+                exec "$DIR/create-site.sh" "$@"
+                ;;
+            list)
+                shift
+                exec "$DIR/list-sites.sh" "$@"
+                ;;
+            *)
+                echo "Usage: tod site <create|list> ..." >&2
+                exit 1
+                ;;
+        esac
+        ;;
+    help|-h|--help)
+        usage
+        ;;
+    *)
+        echo "Unknown command: '$1'" >&2
+        usage
+        exit 1
+        ;;
+esac

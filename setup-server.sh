@@ -9,6 +9,7 @@ WPDEPLOY_DIR="/etc/wpdeploy"
 SITES_LIST="$WPDEPLOY_DIR/sites.list"
 MYSQL_ROOT_PW_FILE="$WPDEPLOY_DIR/.mysql_root"
 ACME_HOME="/root/.acme.sh"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 PHP_VERSION="8.3"
 ACME_EMAIL=""
@@ -226,9 +227,15 @@ systemctl enable fail2ban >/dev/null
 systemctl restart fail2ban
 INSTALLED+=("fail2ban: sshd + nginx-http-auth jails enabled")
 
+# --- tod command -------------------------------------------------------------
+if [[ -x "$SCRIPT_DIR/tod" ]]; then
+    ln -sf "$SCRIPT_DIR/tod" /usr/local/bin/tod
+    INSTALLED+=("tod command: linked into /usr/local/bin/tod (tod help)")
+fi
+
 log "Setup complete"
 printf '\nInstalled/configured:\n'
 for line in "${INSTALLED[@]}"; do
     printf '  - %s\n' "$line"
 done
-printf '\nNext: sudo ./create-site.sh <domain> to provision a site.\n'
+printf '\nNext: sudo tod site create <domain> to provision a site.\n'

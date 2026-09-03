@@ -14,10 +14,13 @@ certificate that's never optional.
 ```bash
 git clone <this repo> /opt/wpdeploy   # or download the files however you like
 cd /opt/wpdeploy
-chmod +x setup-server.sh create-site.sh list-sites.sh
+chmod +x setup-server.sh create-site.sh list-sites.sh tod
 ```
 
 ## Usage
+
+Like WordOps' `wo`, wpdeploy gives you a single `tod` command once it's
+set up — no need to remember individual script paths.
 
 ### 1. Bootstrap the server (once)
 
@@ -26,18 +29,19 @@ sudo ./setup-server.sh --php-version 8.3 --acme-email you@example.com
 ```
 
 Installs and configures nginx, PHP-FPM, MariaDB, Redis, WP-CLI, acme.sh,
-ufw, and fail2ban. Idempotent — re-run any time to pick up interrupted
-steps; it won't break an existing setup. If you omit
-`--mysql-root-password`, you'll be prompted for one (or it'll generate one)
-the first time only; it's stored at `/etc/wpdeploy/.mysql_root`, readable
-by root only.
+ufw, and fail2ban — and, as its last step, symlinks `tod` into
+`/usr/local/bin/tod` so it's available everywhere from here on. Idempotent
+— re-run any time to pick up interrupted steps; it won't break an existing
+setup. If you omit `--mysql-root-password`, you'll be prompted for one (or
+it'll generate one) the first time only; it's stored at
+`/etc/wpdeploy/.mysql_root`, readable by root only.
 
 ### 2. Create a site (per site)
 
 Point the domain's DNS at this server first, then:
 
 ```bash
-sudo ./create-site.sh example.com \
+sudo tod site create example.com \
     --title "Example Site" \
     --admin-user editor \
     --admin-email you@example.com
@@ -58,9 +62,14 @@ is left untouched — nothing failed is left half-provisioned.
 ### 3. List sites
 
 ```bash
-./list-sites.sh              # domain, linux user, db, redis index, php, created
-./list-sites.sh --verbose    # + disk usage and cert expiry
+tod site list              # domain, linux user, db, redis index, php, created
+tod site list --verbose    # + disk usage and cert expiry
 ```
+
+`tod` is just a thin dispatcher — `tod setup`, `tod site create`, and
+`tod site list` call `setup-server.sh`, `create-site.sh`, and
+`list-sites.sh` directly, so the raw scripts still work exactly the same
+if you prefer them (`./create-site.sh example.com --dry-run`, etc.).
 
 ## Isolation model
 
@@ -83,6 +92,7 @@ is left untouched — nothing failed is left half-provisioned.
 
 ## Files
 
+- `tod` — command dispatcher (`tod setup` / `tod site create` / `tod site list`).
 - `setup-server.sh` — one-time server bootstrap.
 - `create-site.sh` — provisions one isolated site.
 - `list-sites.sh` — reads `/etc/wpdeploy/sites.list`.
