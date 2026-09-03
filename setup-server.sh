@@ -61,11 +61,12 @@ add a key first, then re-run with this flag.
 
 --default-plugins is a comma-separated list of wordpress.org plugin
 slugs installed and activated on every site 'tod site create' makes
-afterward, on top of the Redis object cache it always installs. Not
-prompted for -- there's no universal default here, so it's flag-only.
-Akismet and Hello Dolly are always removed from every new site; edit
-REMOVE_DEFAULT_PLUGINS at the top of create-site.sh if you ever want to
-keep one.
+afterward, on top of the Redis object cache it always installs. Ships
+with 'updraftplus' baked in as the built-in default (edit
+DEFAULT_PLUGINS at the top of create-site.sh to change it); pass this
+flag only to override it. Akismet and Hello Dolly are always removed
+from every new site; edit REMOVE_DEFAULT_PLUGINS at the top of
+create-site.sh if you ever want to keep one.
 EOF
     exit 0
 }

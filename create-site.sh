@@ -128,7 +128,10 @@ TITLE="${TITLE:-$DOMAIN}"
 # time). A --admin-user/--admin-email flag on this command always wins.
 DEFAULT_ADMIN_USER=""
 DEFAULT_ADMIN_EMAIL=""
-DEFAULT_PLUGINS=""
+# Built-in default plugin list -- still overridable via
+# 'tod setup --default-plugins' (writes to $CONFIG_FILE, sourced below)
+# if that's ever wanted, but this is what ships without asking.
+DEFAULT_PLUGINS="updraftplus"
 # shellcheck source=/dev/null
 [[ -f "$CONFIG_FILE" ]] && source "$CONFIG_FILE"
 ADMIN_USER="${ADMIN_USER:-${DEFAULT_ADMIN_USER:-admin}}"
@@ -154,6 +157,7 @@ Dry run — no changes will be made. Plan for '$DOMAIN':
   TLS certificate:   Let's Encrypt via acme.sh, installed to $SSL_DIR
   WordPress title:   $TITLE
   Admin user/email:  $ADMIN_USER / $ADMIN_EMAIL
+  Plugins:           redis-cache (always) + ${DEFAULT_PLUGINS:-none}; akismet/hello removed
   Registry entry:    $SITES_LIST
 
 EOF

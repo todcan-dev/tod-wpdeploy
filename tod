@@ -32,7 +32,8 @@ tod — wpdeploy command line
       the account you connected as, so you can't lock yourself out.
       --default-plugins is a comma-separated list of wordpress.org slugs
       installed and activated on every site created afterward, on top of
-      the Redis object cache. Akismet and Hello Dolly are always removed.
+      the Redis object cache. Ships with 'updraftplus' baked in as the
+      default. Akismet and Hello Dolly are always removed.
 
   tod site create <domain> [--title "..."] [--admin-user name]
                             [--admin-email you@example.com]

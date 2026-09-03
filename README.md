@@ -73,10 +73,12 @@ working key before you say yes.
 `--default-plugins "slug-a,slug-b"` (wordpress.org plugin slugs,
 comma-separated) get installed and activated on every site `tod site
 create` makes afterward, on top of the Redis object cache it always
-installs. Not prompted for — there's no universal default here, so it's
-flag-only. Akismet and Hello Dolly are always removed from every new
-site regardless; edit `REMOVE_DEFAULT_PLUGINS` at the top of
-`create-site.sh` if you ever want to keep one.
+installs. Not prompted for — ships with `updraftplus` baked in as the
+built-in default (edit `DEFAULT_PLUGINS` at the top of `create-site.sh`
+to change it); pass the flag only if you want something different.
+Akismet and Hello Dolly are always removed from every new site
+regardless; edit `REMOVE_DEFAULT_PLUGINS` at the top of `create-site.sh`
+if you ever want to keep one.
 
 ### 2. Create a site (per site)
 

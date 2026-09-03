@@ -94,14 +94,16 @@ Disable SSH password login (key-only)? Make sure 'ubuntu' already has an SSH key
   key (if you set up your VPS with key-based access from the start, which
   is the normal flow, you're already covered).
 
-There's a fifth thing this can set, but it's not prompted for since
-there's no universal default: `--default-plugins "slug-a,slug-b"` (any
-wordpress.org plugin slugs, comma-separated) get installed and activated
-on every site `tod site create` makes afterward, on top of the Redis
-object cache it always installs. Akismet and Hello Dolly are always
-removed from every new site regardless of this setting — if you ever
-want to keep one, edit `REMOVE_DEFAULT_PLUGINS` at the top of
-`create-site.sh`.
+There's a fifth thing this can set, but it's not prompted for: `--default-plugins
+"slug-a,slug-b"` (any wordpress.org plugin slugs, comma-separated) get
+installed and activated on every site `tod site create` makes
+afterward, on top of the Redis object cache it always installs. It
+ships with `updraftplus` baked in as the built-in default — edit
+`DEFAULT_PLUGINS` at the top of `create-site.sh` to change it, or pass
+this flag to override it for one server without editing the script.
+Akismet and Hello Dolly are always removed from every new site
+regardless of this setting — if you ever want to keep one, edit
+`REMOVE_DEFAULT_PLUGINS` at the top of `create-site.sh`.
 
 Prefer to skip the prompts? Pass any of these as flags and that prompt
 won't fire — useful for the installer running unattended, or if you just
