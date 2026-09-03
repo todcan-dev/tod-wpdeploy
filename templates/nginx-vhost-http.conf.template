@@ -1,0 +1,35 @@
+# wpdeploy — __DOMAIN__ (HTTP only, pre-certificate)
+#
+# This bare HTTP block exists only so acme.sh can complete an HTTP-01
+# challenge against /.well-known/acme-challenge/. create-site.sh replaces
+# this file with the HTTPS + redirect version right after the certificate
+# is issued.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name __DOMAIN__;
+
+    root __SITE_DIR__;
+    index index.php index.html;
+
+    location ^~ /.well-known/acme-challenge/ {
+        default_type "text/plain";
+        root __SITE_DIR__;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.php?$args;
+    }
+
+    # fastcgi_pass points at this site's own socket only — never a shared
+    # pool — so a request for this vhost can never be served by another
+    # site's PHP-FPM worker.
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:__SOCKET__;
+    }
+
+    location ~ /\.ht {
+        deny all;
+    }
+}
