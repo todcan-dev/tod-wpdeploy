@@ -12,10 +12,14 @@ certificate that's never optional.
 ## Install
 
 ```bash
-git clone <this repo> /opt/wpdeploy   # or download the files however you like
-cd /opt/wpdeploy
-chmod +x setup-server.sh create-site.sh list-sites.sh tod
+curl -fsSL https://raw.githubusercontent.com/todcan-dev/tod-wpdeploy/main/install.sh -o install.sh
+sudo bash install.sh
 ```
+
+This clones wpdeploy to `/opt/wpdeploy` and puts `tod` on your PATH.
+Re-running it later just `git pull`s to update. (Prefer to do it by hand,
+or the repo's private? `git clone` it yourself instead — see
+[INSTALL.md](INSTALL.md).)
 
 ## Usage
 
@@ -92,6 +96,7 @@ if you prefer them (`./create-site.sh example.com --dry-run`, etc.).
 
 ## Files
 
+- `install.sh` — one-command installer (clones the repo, puts `tod` on PATH).
 - `tod` — command dispatcher (`tod setup` / `tod site create` / `tod site list`).
 - `setup-server.sh` — one-time server bootstrap.
 - `create-site.sh` — provisions one isolated site.

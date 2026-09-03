@@ -29,27 +29,35 @@ ssh root@YOUR_SERVER_IP
 If you're not root, use a user with sudo and prefix commands below with
 `sudo`.
 
-## 2. Get the scripts onto the server
+## 2. Install wpdeploy
 
-Clone the repo directly on the VPS:
+The one-line installer downloads the repo to `/opt/wpdeploy` and puts
+`tod` on your PATH:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/todcan-dev/tod-wpdeploy/main/install.sh -o install.sh
+sudo bash install.sh
+```
+
+(Downloads to a file first, then runs it — same reasoning as WordOps'
+`wget wo && sudo bash wo`: a truncated download fails loudly instead of
+silently executing, and it keeps your terminal's stdin free for the
+MariaDB password prompt in the next step.)
+
+If the repo is private, or you'd rather do it by hand:
 
 ```bash
 apt-get update -qq && apt-get install -y git
-git clone git@github.com:todcan-dev/tod-wpdeploy.git /opt/wpdeploy
+git clone git@github.com:todcan-dev/tod-wpdeploy.git /opt/wpdeploy   # or the https:// URL
 cd /opt/wpdeploy
 chmod +x setup-server.sh create-site.sh list-sites.sh tod
+ln -sf "$(pwd)/tod" /usr/local/bin/tod
 ```
-
-(If the VPS doesn't have your SSH key for GitHub, use the HTTPS clone URL
-instead: `https://github.com/todcan-dev/tod-wpdeploy.git`.)
 
 ## 3. Run the one-time server bootstrap
 
-This is the one step you run directly (before `tod` exists on the system
-yet — this step is what installs it):
-
 ```bash
-./setup-server.sh --php-version 8.3 --acme-email you@example.com
+sudo tod setup --php-version 8.3 --acme-email you@example.com
 ```
 
 What this does, in order:
@@ -68,8 +76,8 @@ What this does, in order:
    attempts.
 7. Creates `/etc/wpdeploy/sites.list`, the registry every site gets
    appended to.
-8. Symlinks `tod` into `/usr/local/bin/tod` — from here on, every command
-   below is just `tod ...` from anywhere on the server.
+8. Re-links `tod` into `/usr/local/bin/tod` (already done if you used
+   `install.sh`; this makes the manual-clone path work the same way).
 
 It'll prompt you for a MariaDB root password if you don't pass
 `--mysql-root-password 'something'` — just press Enter to have it
@@ -220,10 +228,13 @@ call them directly.
 
 ## Updating wpdeploy itself
 
+Re-run the installer — it detects the existing `/opt/wpdeploy` checkout
+and does a `git pull` instead of a fresh clone:
+
 ```bash
-cd /opt/wpdeploy
-git pull
+sudo bash install.sh
 ```
 
-Pulling changes doesn't touch already-provisioned sites — `tod setup` and
+or by hand: `cd /opt/wpdeploy && git pull`. Either way, updating wpdeploy
+doesn't touch already-provisioned sites — `tod setup` and
 `tod site create` only act on what you explicitly run them against.
