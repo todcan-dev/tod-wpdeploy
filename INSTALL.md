@@ -56,17 +56,47 @@ ln -sf "$(pwd)/tod" /usr/local/bin/tod
 ## 3. Run the one-time server bootstrap
 
 ```bash
-sudo tod setup --php-version 8.3 --acme-email you@example.com \
-    --admin-user yourname --admin-email you@example.com
+sudo tod setup
 ```
 
-`--admin-user`/`--admin-email` here matter more than they look: they set
-the **server-wide default WordPress admin identity**. If you're the one
-provisioning every site (the common case), set them once here and never
-type them again — every `tod site create` afterward uses this admin
-automatically, the same way WordOps' global config works. You can still
-override per-site with `--admin-user`/`--admin-email` on `tod site
-create` itself, for the rare site that needs a different admin.
+You're at a real terminal (you SSH'd in), so it asks you two things,
+like WordOps does:
+
+```
+WordPress admin username for new sites [admin]:
+WordPress admin email for new sites, also used for Let's Encrypt notices [none]:
+Restrict SSH (port 22) to your current IP (203.0.113.5)? [Y/n, or type a different IP/CIDR]:
+```
+
+- **Admin username/email** become the **server-wide default WordPress
+  admin identity** — the same idea as WordOps' global config. Answer once
+  and every `tod site create` afterward uses this admin automatically;
+  override per-site with `--admin-user`/`--admin-email` on `tod site
+  create` itself for the rare site that needs a different one. The email
+  also becomes the acme.sh registration email for Let's Encrypt, unless
+  you pass `--acme-email` separately.
+- **SSH lockdown**: it detects the IP you're connected from right now
+  and offers to restrict port 22 to it. Press Enter (or `y`) to lock it
+  down, `n` to leave SSH open to everyone, or type a different IP/CIDR.
+  **If that address ever changes, you'll be locked out of SSH** until you
+  fix it from your VPS provider's web console — re-run
+  `sudo tod setup --ssh-allow-ip <new-ip>` (or `--ssh-allow-ip any` to
+  open it back up) once you're back in. If you're not sure your IP is
+  stable, answer `n` here and rely on fail2ban instead.
+
+Prefer to skip the prompts? Pass any of these as flags and that prompt
+won't fire — useful for the installer running unattended, or if you just
+want a one-liner:
+
+```bash
+sudo tod setup --php-version 8.3 --acme-email you@example.com \
+    --admin-user yourname --admin-email you@example.com \
+    --ssh-allow-ip 203.0.113.5
+```
+
+(Piped/non-interactive runs — e.g. inside another script — skip every
+prompt automatically and fall back to flag values or safe defaults: SSH
+stays open to everyone unless `--ssh-allow-ip` is given.)
 
 What this does, in order:
 
@@ -80,22 +110,22 @@ What this does, in order:
    created by `tod site create`.
 4. Installs WP-CLI (`/usr/local/bin/wp`) and acme.sh (Let's Encrypt
    client), with acme.sh's renewal cron job registered automatically.
-5. Configures `ufw` to allow only SSH (22), HTTP (80), and HTTPS (443),
-   and enables it.
+5. Configures `ufw`: HTTP (80) and HTTPS (443) open to everyone, SSH (22)
+   restricted to whatever you answered above (or open to everyone if you
+   said no / passed `--ssh-allow-ip any`).
 6. Configures `fail2ban` to watch SSH and nginx auth logs for brute-force
    attempts.
 7. Creates `/etc/wpdeploy/sites.list`, the registry every site gets
-   appended to.
+   appended to, and writes your answers to `/etc/wpdeploy/config` —
+   before any real installation work starts, so a re-run after a failed
+   step doesn't re-ask what you already answered.
 8. Re-links `tod` into `/usr/local/bin/tod` (already done if you used
    `install.sh`; this makes the manual-clone path work the same way).
-9. If `--admin-user`/`--admin-email` were given, writes them to
-   `/etc/wpdeploy/config` as the default every `tod site create` reads.
 
-Nothing here is interactive — like WordOps, every credential is
-generated for you, never asked for. The MariaDB root password is
-auto-generated unless you pass `--mysql-root-password 'something'`
-yourself, and written once to `/etc/wpdeploy/.mysql_root` (readable by
-root only). `tod site create` reads it from there automatically, and
+The MariaDB root password is the one thing never prompted for — it's
+always auto-generated (unless you pass `--mysql-root-password`
+yourself), written once to `/etc/wpdeploy/.mysql_root` (readable by root
+only). `tod site create` reads it from there automatically, and
 generates its own random per-site database password and (unless you pass
 `--admin-password`) WordPress admin password the same way — you never
 have to type or invent a password anywhere in this process.
@@ -103,7 +133,7 @@ have to type or invent a password anywhere in this process.
 At the end it prints a summary of everything installed. **This step is
 safe to re-run** — if it fails partway (a flaky apt mirror, a network
 blip), just run the same command again; it detects what's already done
-and skips it.
+and skips it, and won't re-ask what you already answered.
 
 ## 4. Create your first site
 
@@ -294,6 +324,14 @@ the same if you ever want to call them directly.
   `tod setup --admin-user newname --admin-email newname@example.com`
   (or edit `/etc/wpdeploy/config` directly). It only affects sites
   created afterward, not ones already provisioned.
+- **Locked out of SSH after restricting it** — your IP changed, or you
+  restricted it to the wrong address. Log in through your VPS provider's
+  web console (every major provider has one — DigitalOcean, Linode,
+  Hetzner, Vultr all call it something like "Console" or "Recovery
+  Console" in their dashboard) and run
+  `sudo tod setup --ssh-allow-ip any` to open port 22 back up, or
+  `sudo tod setup --ssh-allow-ip <your-new-ip>` to point it at the
+  right address.
 - **`tod: command not found`** — either `setup-server.sh` hasn't been run
   yet, or you're not in a shell that's picked up `/usr/local/bin` (it's
   in the default `$PATH` on Ubuntu, so this usually just means step 3

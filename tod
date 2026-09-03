@@ -16,9 +16,15 @@ tod — wpdeploy command line
   tod setup [--php-version 8.3] [--acme-email you@example.com]
             [--mysql-root-password 'secret']
             [--admin-user name] [--admin-email you@example.com]
+            [--ssh-allow-ip <ip-or-cidr>|any]
       Bootstrap this server. Run once, as root. Safe to re-run.
+      Run from a real terminal and it prompts for whatever wasn't passed
+      as a flag (admin username/email, SSH lockdown IP); piped/CI runs
+      skip prompts and use flags or safe defaults.
       --admin-user/--admin-email set the default WP admin every site
       created afterward uses, unless overridden on 'tod site create'.
+      --ssh-allow-ip restricts SSH to one IP/CIDR instead of the whole
+      internet; pass 'any' to leave it open.
 
   tod site create <domain> [--title "..."] [--admin-user name]
                             [--admin-email you@example.com]
@@ -27,8 +33,8 @@ tod — wpdeploy command line
 
   tod site delete <domain> [--yes] [--dry-run]
       Permanently remove a site: Linux user, files, database, PHP-FPM
-      pool, nginx vhost, TLS certificate, Redis cache data. Not
-      reversible. Prompts for typed confirmation unless --yes is given.
+      pool, nginx vhost, TLS certificate, its dedicated Redis instance.
+      Not reversible. Prompts for typed confirmation unless --yes is given.
 
   tod site list [--verbose]
       List provisioned sites.

@@ -29,24 +29,37 @@ set up — no need to remember individual script paths.
 ### 1. Bootstrap the server (once)
 
 ```bash
+sudo ./setup-server.sh
+```
+
+Run it from a real terminal (i.e. over SSH, not piped) and it asks, like
+WordOps does: your WordPress admin username and email (the default every
+`tod site create` uses afterward — same idea as WordOps' global config),
+and whether to restrict SSH to the IP you're currently connecting from.
+Answer once and you never have to retype either for future sites.
+
+Prefer flags, or running it unattended? Everything above can be passed
+directly and no prompt fires for whatever's already given:
+
+```bash
 sudo ./setup-server.sh --php-version 8.3 --acme-email you@example.com \
-    --admin-user yourname --admin-email you@example.com
+    --admin-user yourname --admin-email you@example.com \
+    --ssh-allow-ip 203.0.113.5
 ```
 
 Installs and configures nginx, PHP-FPM, MariaDB, Redis, WP-CLI, acme.sh,
 ufw, and fail2ban — and, as its last step, symlinks `tod` into
 `/usr/local/bin/tod` so it's available everywhere from here on. Idempotent
 — re-run any time to pick up interrupted steps; it won't break an existing
-setup. Never prompts for anything — the MariaDB root password (and every
-per-site DB/admin password later) is auto-generated unless you pass
-`--mysql-root-password` yourself; it's stored once at
+setup. The MariaDB root password (and every per-site DB/admin password
+later) is always auto-generated, never prompted for; it's stored once at
 `/etc/wpdeploy/.mysql_root`, readable by root only.
 
-`--admin-user`/`--admin-email` here are the WordPress admin identity
-**every site will use by default** — the same idea as WordOps' global
-config. Set them once and every `tod site create` afterward just uses
-them; you only pass `--admin-user`/`--admin-email` again if a specific
-site needs a different admin.
+`--ssh-allow-ip` locks port 22 to one IP/CIDR instead of the whole
+internet — pass `any` to explicitly leave it open. **If that address ever
+changes you'll be locked out of SSH** until you fix it from your VPS
+provider's web console; re-run `tod setup --ssh-allow-ip <new-ip>` (or
+`any`) once you're back in.
 
 ### 2. Create a site (per site)
 
@@ -128,8 +141,10 @@ raw scripts still work exactly the same if you prefer them
   socket, own random `requirepass` written only to that site's
   `wp-config.php` — same credential-based isolation model as MariaDB.
   No site-count cap from Redis anymore, since nothing is shared.
-- **Firewall / brute-force**: ufw allows only 22/80/443; fail2ban watches
-  sshd and nginx.
+- **Firewall / brute-force**: ufw allows only 80/443 to everyone, plus 22
+  — restricted to one IP/CIDR by default (`tod setup` asks for it, or set
+  it with `--ssh-allow-ip`; pass `any` to leave SSH open to everyone).
+  fail2ban watches sshd and nginx on top of that.
 
 ## Files
 

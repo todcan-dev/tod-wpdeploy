@@ -17,6 +17,7 @@ ACME_EMAIL=""
 MYSQL_ROOT_PASSWORD=""
 ADMIN_USER=""
 ADMIN_EMAIL=""
+SSH_ALLOW_IP=""
 
 log()  { printf '\n\033[1;32m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33mWARN:\033[0m %s\n' "$*" >&2; }
@@ -27,13 +28,26 @@ usage() {
 Usage: sudo ./setup-server.sh [--php-version 8.3] [--acme-email you@example.com]
                                [--mysql-root-password 'secret']
                                [--admin-user name] [--admin-email you@example.com]
+                               [--ssh-allow-ip <ip-or-cidr>|any]
 
 Bootstraps this server for wpdeploy: nginx, PHP-FPM, MariaDB, Redis,
 WP-CLI, acme.sh, ufw, fail2ban. Run once per server. Safe to re-run.
 
+Run it from a real terminal and it prompts for whatever wasn't passed as
+a flag: WordPress admin username/email (the default every
+'tod site create' uses afterward) and whether to restrict SSH to your
+current IP. Piped/non-interactive runs skip all prompts and fall back to
+flag values or safe defaults (SSH stays open to everyone unless
+--ssh-allow-ip is given).
+
 --admin-user/--admin-email set the server-wide default WordPress admin
 identity: every 'tod site create' afterward uses them unless overridden
 per-site with its own --admin-user/--admin-email.
+
+--ssh-allow-ip restricts SSH (port 22) to one IP/CIDR instead of the
+whole internet; pass 'any' to explicitly leave it open. If that address
+ever changes, you'll need console access from your VPS provider to get
+back in -- re-run with --ssh-allow-ip any (or the new address) to fix it.
 EOF
     exit 0
 }
@@ -45,12 +59,54 @@ while [[ $# -gt 0 ]]; do
         --mysql-root-password) MYSQL_ROOT_PASSWORD="$2"; shift 2 ;;
         --admin-user) ADMIN_USER="$2"; shift 2 ;;
         --admin-email) ADMIN_EMAIL="$2"; shift 2 ;;
+        --ssh-allow-ip) SSH_ALLOW_IP="$2"; shift 2 ;;
         -h|--help) usage ;;
         *) die "Unknown argument: $1 (see --help)" ;;
     esac
 done
 
 [[ $EUID -eq 0 ]] || die "Must be run as root (sudo ./setup-server.sh)"
+
+# --- Interactive setup (only when connected to a real terminal) ------------
+# Flags always win; this only fills in what wasn't passed. A piped or
+# non-interactive run (install.sh, cron, CI) skips straight to the
+# fallback resolution below with no prompts at all.
+DEFAULT_ADMIN_USER=""
+DEFAULT_ADMIN_EMAIL=""
+PREV_SSH_ALLOW_IP=""
+# shellcheck source=/dev/null
+[[ -f "$CONFIG_FILE" ]] && source "$CONFIG_FILE"
+
+if [[ -t 0 ]]; then
+    if [[ -z "$ADMIN_USER" ]]; then
+        read -rp "WordPress admin username for new sites [${DEFAULT_ADMIN_USER:-admin}]: " ADMIN_USER || true
+    fi
+    if [[ -z "$ADMIN_EMAIL" ]]; then
+        read -rp "WordPress admin email for new sites, also used for Let's Encrypt notices [${DEFAULT_ADMIN_EMAIL:-none}]: " ADMIN_EMAIL || true
+    fi
+    if [[ -z "$SSH_ALLOW_IP" ]]; then
+        DETECTED_IP="$(awk '{print $1}' <<<"${SSH_CLIENT:-}")"
+        if [[ -n "$DETECTED_IP" ]]; then
+            read -rp "Restrict SSH (port 22) to your current IP ($DETECTED_IP)? [Y/n, or type a different IP/CIDR]: " ssh_answer || true
+            case "${ssh_answer,,}" in
+                ""|y|yes) SSH_ALLOW_IP="$DETECTED_IP" ;;
+                n|no)     SSH_ALLOW_IP="any" ;;
+                *)        SSH_ALLOW_IP="$ssh_answer" ;;
+            esac
+        else
+            read -rp "Restrict SSH (port 22) to an IP/CIDR? Leave blank to allow from anywhere [${PREV_SSH_ALLOW_IP:-any}]: " SSH_ALLOW_IP || true
+        fi
+    fi
+fi
+
+ADMIN_USER="${ADMIN_USER:-${DEFAULT_ADMIN_USER:-admin}}"
+ADMIN_EMAIL="${ADMIN_EMAIL:-$DEFAULT_ADMIN_EMAIL}"
+SSH_ALLOW_IP="${SSH_ALLOW_IP:-${PREV_SSH_ALLOW_IP:-any}}"
+ACME_EMAIL="${ACME_EMAIL:-$ADMIN_EMAIL}"
+
+if [[ "$SSH_ALLOW_IP" != "any" ]]; then
+    warn "SSH will be restricted to $SSH_ALLOW_IP -- if that address ever changes you'll need console access from your VPS provider to reconnect. Re-run with --ssh-allow-ip any to open it back up."
+fi
 
 INSTALLED=()   # human-readable summary lines, printed at the end
 
@@ -60,6 +116,16 @@ chmod 700 "$WPDEPLOY_DIR"
 touch "$SITES_LIST"
 chmod 600 "$SITES_LIST"
 INSTALLED+=("Registry: $WPDEPLOY_DIR (sites.list)")
+
+# Persisted now (before any real provisioning) so a re-run after a
+# transient failure doesn't re-prompt for what was already answered.
+{
+    [[ -n "$ADMIN_USER" ]] && echo "DEFAULT_ADMIN_USER='$ADMIN_USER'"
+    [[ -n "$ADMIN_EMAIL" ]] && echo "DEFAULT_ADMIN_EMAIL='$ADMIN_EMAIL'"
+    echo "PREV_SSH_ALLOW_IP='$SSH_ALLOW_IP'"
+} > "$CONFIG_FILE"
+chmod 644 "$CONFIG_FILE"
+[[ -n "$ADMIN_USER" || -n "$ADMIN_EMAIL" ]] && INSTALLED+=("Default WP admin for new sites: ${ADMIN_USER:-admin} <${ADMIN_EMAIL:-not set}>")
 
 log "Updating apt package index"
 apt-get update -qq
@@ -202,14 +268,26 @@ ln -sf "$ACME_HOME/acme.sh" /usr/local/bin/acme.sh
 INSTALLED+=("acme.sh, default CA = Let's Encrypt, auto-renewal cron installed")
 
 # --- ufw -------------------------------------------------------------------
-log "Configuring ufw (22, 80, 443 only)"
-ufw allow 22/tcp >/dev/null
+log "Configuring ufw (SSH: $SSH_ALLOW_IP, plus 80, 443)"
+if [[ -n "$PREV_SSH_ALLOW_IP" && "$PREV_SSH_ALLOW_IP" != "$SSH_ALLOW_IP" ]]; then
+    log "SSH access rule changed ($PREV_SSH_ALLOW_IP -> $SSH_ALLOW_IP), removing the old rule"
+    if [[ "$PREV_SSH_ALLOW_IP" == "any" ]]; then
+        ufw delete allow 22/tcp >/dev/null 2>&1 || true
+    else
+        ufw delete allow from "$PREV_SSH_ALLOW_IP" to any port 22 proto tcp >/dev/null 2>&1 || true
+    fi
+fi
+if [[ "$SSH_ALLOW_IP" == "any" ]]; then
+    ufw allow 22/tcp >/dev/null
+else
+    ufw allow from "$SSH_ALLOW_IP" to any port 22 proto tcp >/dev/null
+fi
 ufw allow 80/tcp >/dev/null
 ufw allow 443/tcp >/dev/null
 ufw default deny incoming >/dev/null
 ufw default allow outgoing >/dev/null
 ufw --force enable >/dev/null
-INSTALLED+=("ufw: allow 22, 80, 443; deny everything else")
+INSTALLED+=("ufw: SSH restricted to $SSH_ALLOW_IP; 80, 443 open; deny everything else")
 
 # --- fail2ban -------------------------------------------------------------------
 log "Configuring fail2ban (sshd + nginx)"
@@ -233,25 +311,6 @@ INSTALLED+=("fail2ban: sshd + nginx-http-auth jails enabled")
 if [[ -x "$SCRIPT_DIR/tod" ]]; then
     ln -sf "$SCRIPT_DIR/tod" /usr/local/bin/tod
     INSTALLED+=("tod command: linked into /usr/local/bin/tod (tod help)")
-fi
-
-# --- Server-wide WordPress admin default -------------------------------------
-# Only touched when at least one of the two flags is given, so a re-run
-# for something else (e.g. just picking up a new PHP extension) never
-# clobbers a default set earlier.
-if [[ -n "$ADMIN_USER" || -n "$ADMIN_EMAIL" ]]; then
-    DEFAULT_ADMIN_USER=""
-    DEFAULT_ADMIN_EMAIL=""
-    # shellcheck source=/dev/null
-    [[ -f "$CONFIG_FILE" ]] && source "$CONFIG_FILE"
-    ADMIN_USER="${ADMIN_USER:-$DEFAULT_ADMIN_USER}"
-    ADMIN_EMAIL="${ADMIN_EMAIL:-$DEFAULT_ADMIN_EMAIL}"
-    {
-        echo "DEFAULT_ADMIN_USER='$ADMIN_USER'"
-        echo "DEFAULT_ADMIN_EMAIL='$ADMIN_EMAIL'"
-    } > "$CONFIG_FILE"
-    chmod 644 "$CONFIG_FILE"
-    INSTALLED+=("Default WP admin for new sites: $ADMIN_USER <$ADMIN_EMAIL>")
 fi
 
 log "Setup complete"
