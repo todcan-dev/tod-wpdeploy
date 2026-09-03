@@ -28,25 +28,26 @@ done
 [[ -s "$SITES_LIST" ]] || { echo "No sites provisioned yet."; exit 0; }
 
 if (( VERBOSE )); then
-    printf "%-30s %-18s %-22s %-6s %-6s %-12s %-8s %-25s\n" \
-        "DOMAIN" "LINUX USER" "DB NAME" "REDIS" "PHP" "CREATED" "DISK" "CERT EXPIRES"
+    printf "%-30s %-18s %-22s %-6s %-12s %-6s %-8s %-25s\n" \
+        "DOMAIN" "LINUX USER" "DB NAME" "PHP" "CREATED" "REDIS" "DISK" "CERT EXPIRES"
 else
-    printf "%-30s %-18s %-22s %-6s %-6s %-12s\n" \
-        "DOMAIN" "LINUX USER" "DB NAME" "REDIS" "PHP" "CREATED"
+    printf "%-30s %-18s %-22s %-6s %-12s\n" \
+        "DOMAIN" "LINUX USER" "DB NAME" "PHP" "CREATED"
 fi
 
-while IFS='|' read -r domain user db redis php created; do
+while IFS='|' read -r domain user db php created; do
     [[ -z "$domain" ]] && continue
     if (( VERBOSE )); then
+        redis_status="$(systemctl is-active "redis-server@${user}" 2>/dev/null || echo "down")"
         disk="n/a"
         [[ -d "/var/www/$domain" ]] && disk="$(du -sh "/var/www/$domain" 2>/dev/null | cut -f1)"
         expiry="n/a"
         cert="/etc/nginx/ssl/$domain/fullchain.pem"
         [[ -f "$cert" ]] && expiry="$(openssl x509 -enddate -noout -in "$cert" 2>/dev/null | cut -d= -f2)"
-        printf "%-30s %-18s %-22s %-6s %-6s %-12s %-8s %-25s\n" \
-            "$domain" "$user" "$db" "$redis" "$php" "$created" "$disk" "$expiry"
+        printf "%-30s %-18s %-22s %-6s %-12s %-6s %-8s %-25s\n" \
+            "$domain" "$user" "$db" "$php" "$created" "$redis_status" "$disk" "$expiry"
     else
-        printf "%-30s %-18s %-22s %-6s %-6s %-12s\n" \
-            "$domain" "$user" "$db" "$redis" "$php" "$created"
+        printf "%-30s %-18s %-22s %-6s %-12s\n" \
+            "$domain" "$user" "$db" "$php" "$created"
     fi
 done < "$SITES_LIST"

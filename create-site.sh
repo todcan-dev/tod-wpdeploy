@@ -3,9 +3,9 @@ set -euo pipefail
 
 # wpdeploy :: create-site.sh <domain>
 # Provisions one fully isolated WordPress site: dedicated Linux user,
-# PHP-FPM pool + socket, MariaDB database/user, Redis DB index, nginx
-# vhost, Let's Encrypt certificate, and a fresh WP install with the Redis
-# object cache plugin enabled.
+# PHP-FPM pool + socket, MariaDB database/user, dedicated Redis instance,
+# nginx vhost, Let's Encrypt certificate, and a fresh WP install with the
+# Redis object cache plugin enabled.
 
 WPDEPLOY_DIR="/etc/wpdeploy"
 SITES_LIST="$WPDEPLOY_DIR/sites.list"
@@ -33,8 +33,8 @@ Usage: sudo ./create-site.sh <domain> [--title "My Site"] [--admin-user name]
                               [--dry-run]
 
 Provisions an isolated WordPress site at <domain> with its own Linux user,
-PHP-FPM pool, MariaDB database, Redis DB index, nginx vhost, and a
-mandatory Let's Encrypt certificate. DNS for <domain> must already point
+PHP-FPM pool, MariaDB database, dedicated Redis instance, nginx vhost, and
+a mandatory Let's Encrypt certificate. DNS for <domain> must already point
 at this server.
 
 --admin-user/--admin-email default to whatever was set with
@@ -122,20 +122,6 @@ if [[ -z "$ADMIN_PASSWORD" ]]; then
     GENERATED_ADMIN_PASSWORD=1
 fi
 
-# --- 2. Pick a free Redis DB index -------------------------------------------
-
-USED_INDICES="$(cut -d'|' -f4 "$SITES_LIST" 2>/dev/null || true)"
-REDIS_INDEX=""
-for i in $(seq 0 15); do
-    if ! grep -qx "$i" <<<"$USED_INDICES"; then
-        REDIS_INDEX="$i"
-        break
-    fi
-done
-if [[ -z "$REDIS_INDEX" ]] && (( DRY_RUN == 0 )); then
-    die "All 16 Redis DB indices (0-15) are in use — the shared Redis instance is out of room. Increase 'databases' in redis.conf or add a second Redis instance before adding more sites."
-fi
-
 if (( DRY_RUN )); then
     cat <<EOF
 
@@ -145,7 +131,7 @@ Dry run — no changes will be made. Plan for '$DOMAIN':
   Site directory:    $SITE_DIR
   PHP-FPM pool:      $POOL_FILE (socket $SOCKET, PHP $PHP_VERSION)
   Database:          $DB_NAME (user $DB_USER, scoped grant, random password)
-  Redis DB index:    ${REDIS_INDEX:-NONE AVAILABLE (0-15 exhausted)}
+  Redis instance:    own redis-server@$NORMALIZED (unix socket, random password)
   Nginx vhost:       $VHOST_FILE -> $VHOST_LINK
   TLS certificate:   Let's Encrypt via acme.sh, installed to $SSL_DIR
   WordPress title:   $TITLE
@@ -190,6 +176,10 @@ cleanup() {
                 ;;
             db_user)
                 mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP USER IF EXISTS '$val'@'localhost';" 2>/dev/null || true
+                ;;
+            redis)
+                systemctl disable --now "redis-server@${val}" >/dev/null 2>&1 || true
+                rm -f "/etc/redis/redis-${val}.conf" 2>/dev/null || true
                 ;;
             directory)
                 rm -rf "$val" 2>/dev/null || true
@@ -254,7 +244,40 @@ mysql -uroot -p"$MYSQL_ROOT_PASSWORD" <<-SQL
 SQL
 mark "db_user:$DB_USER"
 
-# --- 7. Nginx vhost (HTTP only, needed for ACME validation) -----------------
+# --- 7. Redis instance -----------------------------------------------------
+# Dedicated redis-server process per site (systemd's redis-server@.service
+# template, shipped by the redis-server package) -- not a shared instance
+# split by DB index. Every instance runs as the same OS 'redis' user, so
+# socket file permissions alone can't separate sites; requirepass is the
+# actual boundary, unique per site and written only to that site's
+# wp-config.php, the same credential-based model already used for MariaDB.
+
+log "Creating Redis instance for '$NORMALIZED'"
+REDIS_PASSWORD="$(openssl rand -hex 24)"
+REDIS_SOCKET="/run/redis-${NORMALIZED}/redis-server.sock"
+
+cp /etc/redis/redis.conf "/etc/redis/redis-${NORMALIZED}.conf"
+sed -i \
+    -e "s|^port .*|port 0|" \
+    -e "s|^# unixsocket .*|unixsocket ${REDIS_SOCKET}|" \
+    -e "s|^# unixsocketperm .*|unixsocketperm 777|" \
+    -e "s|^pidfile .*|pidfile /run/redis-${NORMALIZED}/redis-server.pid|" \
+    -e "s|^logfile .*|logfile /var/log/redis/redis-server-${NORMALIZED}.log|" \
+    -e "s|^save .*|save \"\"|" \
+    -e "s|^dbfilename .*|dbfilename dump-${NORMALIZED}.rdb|" \
+    -e "s|^# requirepass .*|requirepass ${REDIS_PASSWORD}|" \
+    "/etc/redis/redis-${NORMALIZED}.conf"
+# unixsocketperm 777: the socket is broadly reachable at the OS level
+# (every instance runs as the shared 'redis' user, so per-site file
+# permissions can't gate it) -- requirepass above is what actually
+# authorizes a connection, same model as MariaDB's socket.
+# save "": this is a cache, not a source of truth -- disabling RDB
+# snapshots means nothing to clean up on delete and no idle disk I/O.
+
+systemctl enable --now "redis-server@${NORMALIZED}" >/dev/null
+mark "redis:$NORMALIZED"
+
+# --- 8. Nginx vhost (HTTP only, needed for ACME validation) -----------------
 
 log "Writing nginx vhost (HTTP) and enabling site"
 sed \
@@ -267,7 +290,7 @@ ln -sf "$VHOST_FILE" "$VHOST_LINK"
 nginx -t
 systemctl reload nginx
 
-# --- 8. Let's Encrypt certificate -----------------------------------------
+# --- 9. Let's Encrypt certificate -----------------------------------------
 
 log "Requesting Let's Encrypt certificate for $DOMAIN (webroot validation)"
 mkdir -p "$SSL_DIR"
@@ -289,7 +312,7 @@ sed \
 nginx -t
 systemctl reload nginx
 
-# --- 9. WordPress via WP-CLI -----------------------------------------------
+# --- 10. WordPress via WP-CLI -----------------------------------------------
 # Runs as $LINUX_USER (not root) — sudo execs wp directly, so the target
 # account's nologin shell doesn't block it.
 
@@ -311,9 +334,9 @@ $WP config create --dbname="$DB_NAME" --dbuser="$DB_USER" --dbpass="$DB_PASSWORD
 # location block is ever misconfigured or disabled.
 mv "$SITE_DIR/wp-config.php" "$SITE_BASE/wp-config.php"
 
-$WP config set WP_REDIS_HOST 127.0.0.1 --type=constant --quiet
-$WP config set WP_REDIS_PORT 6379 --raw --type=constant --quiet
-$WP config set WP_REDIS_DATABASE "$REDIS_INDEX" --raw --type=constant --quiet
+$WP config set WP_REDIS_SCHEME unix --type=constant --quiet
+$WP config set WP_REDIS_PATH "$REDIS_SOCKET" --type=constant --quiet
+$WP config set WP_REDIS_PASSWORD "$REDIS_PASSWORD" --type=constant --quiet
 
 log "Installing WordPress"
 $WP core install --url="https://$DOMAIN" --title="$TITLE" \
@@ -324,9 +347,9 @@ log "Installing and enabling the Redis object cache"
 $WP plugin install redis-cache --activate --quiet
 $WP redis enable --quiet
 
-# --- 10. Register the site -----------------------------------------------
+# --- 11. Register the site -----------------------------------------------
 
-echo "${DOMAIN}|${LINUX_USER}|${DB_NAME}|${REDIS_INDEX}|${PHP_VERSION}|$(date +%F)" >> "$SITES_LIST"
+echo "${DOMAIN}|${LINUX_USER}|${DB_NAME}|${PHP_VERSION}|$(date +%F)" >> "$SITES_LIST"
 
 trap - ERR
 
@@ -341,7 +364,7 @@ cat <<EOF
 $( (( GENERATED_ADMIN_PASSWORD )) && echo "  Admin password:  $ADMIN_PASSWORD  (generated — save this now, it is not stored anywhere)" )
   Database:        $DB_NAME
   Linux user:      $LINUX_USER
-  Redis DB index:  $REDIS_INDEX
+  Redis instance:  redis-server@$LINUX_USER
   PHP-FPM pool:    $POOL_FILE
 
 EOF

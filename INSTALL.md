@@ -75,7 +75,9 @@ What this does, in order:
 2. Installs and secures MariaDB — sets a root password, removes anonymous
    users and the `test` database, and binds it to `127.0.0.1` so it's
    never reachable from outside the server.
-3. Installs Redis, also bound to `127.0.0.1`.
+3. Installs Redis (bound to `127.0.0.1`) and disables its default shared
+   instance — each site gets its own dedicated Redis instance instead,
+   created by `tod site create`.
 4. Installs WP-CLI (`/usr/local/bin/wp`) and acme.sh (Let's Encrypt
    client), with acme.sh's renewal cron job registered automatically.
 5. Configures `ufw` to allow only SSH (22), HTTP (80), and HTTPS (443),
@@ -140,7 +142,7 @@ tod site create example.com --dry-run
 ```
 
 That prints the computed Linux username, database name, socket path,
-next free Redis index, and so on, then exits.
+and so on, then exits.
 
 ### What happens when you run it for real
 
@@ -153,7 +155,8 @@ next free Redis index, and so on, then exits.
    root and `htdocs/`) with shell-exec functions disabled.
 5. Creates a MariaDB database and a database user whose grants are
    scoped to that one database only.
-6. Picks the next free Redis DB index (0–15).
+6. Creates a dedicated Redis instance for the site (own unix socket,
+   own random password — not a shared instance).
 7. Writes an nginx vhost and reloads nginx.
 8. Requests a Let's Encrypt certificate via acme.sh (this is the step
    that needs working DNS) and rewrites the vhost to serve HTTPS with an
@@ -188,7 +191,7 @@ When it finishes, you'll see something like:
   Admin password:  Xk9pQz2mN4wRtL8s  (generated — save this now, it is not stored anywhere)
   Database:        wp_example_com
   Linux user:      example_com
-  Redis DB index:  0
+  Redis instance:  redis-server@example_com
   PHP-FPM pool:    /etc/php/8.3/fpm/pool.d/example_com.conf
 ```
 
@@ -206,16 +209,16 @@ tod site create third-site.com
 Each one gets fully isolated resources; a compromise on one site can't
 reach another site's files, database, or PHP process.
 
-You can host up to 16 sites per server before you run into the shared
-Redis instance's default DB-index limit (0–15) — `tod site create` will
-refuse the 17th with a clear error telling you to either raise
-`databases` in `/etc/redis/redis.conf` or run a second Redis instance.
+Each site gets its own Redis instance too, so there's no shared-instance
+site-count cap to run into — the real ceiling is server RAM/CPU, since
+every site now runs its own small `redis-server` process (same tradeoff
+already accepted for PHP-FPM pools).
 
 ## 6. Check what's installed
 
 ```bash
 tod site list
-tod site list --verbose   # + disk usage per site and cert expiry date
+tod site list --verbose   # + Redis instance status, disk usage, cert expiry
 ```
 
 ## 7. Delete a site
@@ -227,10 +230,9 @@ tod site delete example.com
 This is permanent: it removes the Linux user (and every file in
 `/var/www/example.com`), drops the MariaDB database and user, deletes
 the PHP-FPM pool and nginx vhost, revokes and removes the TLS
-certificate, flushes that site's Redis DB index (so the next site to
-reuse that index doesn't inherit stale cache data), and drops the
-registry entry. There's no backup step — back up anything you need
-first.
+certificate, stops and removes the site's dedicated Redis instance, and
+drops the registry entry. There's no backup step — back up anything you
+need first.
 
 It shows you exactly what's about to be deleted, then asks you to type
 the domain name to confirm:
@@ -242,7 +244,7 @@ This will permanently delete:
   PHP-FPM pool:      /etc/php/8.3/fpm/pool.d/example_com.conf
   Nginx vhost:       /etc/nginx/sites-available/example.com
   TLS certificate:   /etc/nginx/ssl/example.com (and /root/.acme.sh/example.com)
-  Redis DB index:    0 (flushed, freed for reuse)
+  Redis instance:    redis-server@example_com (stopped and removed)
   Registry entry:    example.com in /etc/wpdeploy/sites.list
 
 This cannot be undone. No backup is taken.

@@ -153,6 +153,13 @@ fi
 INSTALLED+=("MariaDB, bound to 127.0.0.1, root password in $MYSQL_ROOT_PW_FILE (root-only)")
 
 # --- Redis -------------------------------------------------------------------
+# Installed here for the package + its systemd redis-server@.service
+# template + default /etc/redis/redis.conf, but no shared instance is
+# actually used by any site -- create-site.sh starts a dedicated
+# redis-server@<site> instance per site instead (own unix socket, own
+# random requirepass), so one compromised site can't read or flush
+# another site's cache. The default (non-templated) instance is disabled
+# so there's no always-on, unauthenticated Redis anyone could reach.
 if ! dpkg -s redis-server >/dev/null 2>&1; then
     log "Installing Redis"
     apt-get install -y -qq redis-server
@@ -161,26 +168,11 @@ else
 fi
 
 REDIS_CONF="/etc/redis/redis.conf"
-REDIS_CHANGED=0
-if [[ -f "$REDIS_CONF" ]]; then
-    if ! grep -qE '^bind 127\.0\.0\.1' "$REDIS_CONF"; then
-        sed -i 's/^bind .*/bind 127.0.0.1 -::1/' "$REDIS_CONF"
-        REDIS_CHANGED=1
-    fi
-    if ! grep -qE '^supervised systemd' "$REDIS_CONF"; then
-        if grep -qE '^supervised ' "$REDIS_CONF"; then
-            sed -i 's/^supervised .*/supervised systemd/' "$REDIS_CONF"
-        else
-            echo "supervised systemd" >> "$REDIS_CONF"
-        fi
-        REDIS_CHANGED=1
-    fi
+if [[ -f "$REDIS_CONF" ]] && ! grep -qE '^bind 127\.0\.0\.1' "$REDIS_CONF"; then
+    sed -i 's/^bind .*/bind 127.0.0.1 -::1/' "$REDIS_CONF"
 fi
-systemctl enable redis-server >/dev/null
-if (( REDIS_CHANGED )) || ! systemctl is-active --quiet redis-server; then
-    systemctl restart redis-server
-fi
-INSTALLED+=("Redis, bound to 127.0.0.1 (shared instance, per-site DB index 0-15)")
+systemctl disable --now redis-server >/dev/null 2>&1 || true
+INSTALLED+=("Redis installed (per-site instances started by 'tod site create'; default shared instance disabled)")
 
 # --- WP-CLI -------------------------------------------------------------------
 if ! command -v wp >/dev/null 2>&1; then

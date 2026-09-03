@@ -4,8 +4,8 @@ set -euo pipefail
 # wpdeploy :: delete-site.sh <domain>
 # Permanently removes a site provisioned by create-site.sh: Linux user
 # (and its home/site directory), PHP-FPM pool, MariaDB database + user,
-# nginx vhost, Let's Encrypt certificate, Redis cache data for that
-# site's DB index, and the registry entry. This is destructive and not
+# nginx vhost, Let's Encrypt certificate, the site's dedicated Redis
+# instance, and the registry entry. This is destructive and not
 # reversible -- there is no backup step.
 
 WPDEPLOY_DIR="/etc/wpdeploy"
@@ -26,9 +26,9 @@ usage() {
 Usage: sudo ./delete-site.sh <domain> [--yes] [--dry-run]
 
 Permanently removes a site: Linux user, site directory, PHP-FPM pool,
-MariaDB database/user, nginx vhost, Let's Encrypt certificate, Redis
-cache data, and the registry entry. Cannot be undone -- there is no
-backup step, so back up anything you need first.
+MariaDB database/user, nginx vhost, Let's Encrypt certificate, the
+site's dedicated Redis instance, and the registry entry. Cannot be
+undone -- there is no backup step, so back up anything you need first.
 
   --yes, -y   skip the typed-confirmation prompt (for scripting)
   --dry-run   show what would be deleted without deleting anything
@@ -59,7 +59,7 @@ DOMAIN="${DOMAIN%%/*}"
 RECORD="$(grep "^${DOMAIN}|" "$SITES_LIST" 2>/dev/null || true)"
 [[ -n "$RECORD" ]] || die "'$DOMAIN' is not in $SITES_LIST -- nothing to delete (see: tod site list)"
 
-IFS='|' read -r _ LINUX_USER DB_NAME REDIS_INDEX PHP_VERSION _ <<<"$RECORD"
+IFS='|' read -r _ LINUX_USER DB_NAME PHP_VERSION _ <<<"$RECORD"
 
 SITE_BASE="/var/www/$DOMAIN"
 POOL_FILE="/etc/php/${PHP_VERSION}/fpm/pool.d/${LINUX_USER}.conf"
@@ -76,7 +76,7 @@ This will permanently delete:
   PHP-FPM pool:      $POOL_FILE
   Nginx vhost:       $VHOST_FILE
   TLS certificate:   $SSL_DIR (and $ACME_CERT_DIR)
-  Redis DB index:    $REDIS_INDEX (flushed, freed for reuse)
+  Redis instance:    redis-server@$LINUX_USER (stopped and removed)
   Registry entry:    $DOMAIN in $SITES_LIST
 
 This cannot be undone. No backup is taken.
@@ -125,10 +125,10 @@ else
     FAILED+=("MariaDB: drop database \`$DB_NAME\` / user '$LINUX_USER' manually (no root password file)")
 fi
 
-# Flushed, not just left alone: the index is about to be handed to the next
-# site create-site.sh provisions, and it shouldn't inherit this site's cache.
-log "Flushing Redis DB index $REDIS_INDEX"
-redis-cli -n "$REDIS_INDEX" FLUSHDB >/dev/null 2>&1 || FAILED+=("redis-cli -n $REDIS_INDEX FLUSHDB manually")
+log "Stopping and removing the Redis instance"
+systemctl disable --now "redis-server@${LINUX_USER}" >/dev/null 2>&1 \
+    || FAILED+=("systemctl disable --now redis-server@${LINUX_USER} manually")
+rm -f "/etc/redis/redis-${LINUX_USER}.conf" "/var/log/redis/redis-server-${LINUX_USER}.log"
 
 log "Removing the Linux user and site directory"
 if id "$LINUX_USER" >/dev/null 2>&1; then

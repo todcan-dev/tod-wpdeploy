@@ -3,7 +3,7 @@
 Minimal, secure-by-default WordPress provisioning for a single Ubuntu 24.04
 VPS. No dashboard, no multisite, no per-site PHP version, no monitoring
 stack — just three scripts that give every site its own Linux user,
-PHP-FPM pool, database, and Redis DB index, with a Let's Encrypt
+PHP-FPM pool, database, and dedicated Redis instance, with a Let's Encrypt
 certificate that's never optional.
 
 > Full step-by-step walkthrough (VPS setup through your first WordPress
@@ -62,12 +62,12 @@ step 1. Override per-site if you need to:
 
 Omit `--admin-password` and one is generated and printed once at the end
 (it isn't stored anywhere else). Add `--dry-run` to see the full plan
-(Linux user, DB name, socket path, Redis index, etc.) without touching the
-server.
+(Linux user, DB name, socket path, Redis instance, etc.) without touching
+the server.
 
 This is the whole pipeline, in order: Linux user → site directory → PHP-FPM
-pool → MariaDB database/user → Redis DB index → nginx vhost (HTTP) →
-Let's Encrypt certificate → nginx vhost (HTTPS) → WordPress install →
+pool → MariaDB database/user → dedicated Redis instance → nginx vhost (HTTP)
+→ Let's Encrypt certificate → nginx vhost (HTTPS) → WordPress install →
 Redis object cache plugin → registry entry. If any step fails, everything
 created so far for that site is automatically rolled back and the registry
 is left untouched — nothing failed is left half-provisioned.
@@ -75,8 +75,8 @@ is left untouched — nothing failed is left half-provisioned.
 ### 3. List sites
 
 ```bash
-tod site list              # domain, linux user, db, redis index, php, created
-tod site list --verbose    # + disk usage and cert expiry
+tod site list              # domain, linux user, db, php, created
+tod site list --verbose    # + Redis instance status, disk usage, cert expiry
 ```
 
 ### 4. Delete a site
@@ -87,10 +87,10 @@ tod site delete example.com
 
 Permanently removes everything `create-site.sh` created for that domain —
 Linux user, files, database, PHP-FPM pool, nginx vhost, TLS certificate,
-Redis cache data — and drops the registry entry. Not reversible; there's
-no backup step. Prompts you to type the domain to confirm (skip with
-`--yes` for scripting); add `--dry-run` to see exactly what would be
-removed first.
+its dedicated Redis instance — and drops the registry entry. Not
+reversible; there's no backup step. Prompts you to type the domain to
+confirm (skip with `--yes` for scripting); add `--dry-run` to see exactly
+what would be removed first.
 
 `tod` is just a thin dispatcher — `tod setup`, `tod site create`,
 `tod site delete`, and `tod site list` call `setup-server.sh`,
@@ -123,9 +123,11 @@ raw scripts still work exactly the same if you prefer them
 - **MariaDB**: bound to `127.0.0.1`, one database + one user per site,
   grants scoped to that database only, random password written only to
   that site's `wp-config.php`.
-- **Redis**: one shared instance, one DB index (0–15) per site, tracked in
-  the registry. `create-site.sh` refuses to provision a 17th site and
-  tells you to bump `databases` in `redis.conf` or add a second instance.
+- **Redis**: own `redis-server@<site>` instance per site (systemd
+  template, not a shared instance carved up by DB index), own unix
+  socket, own random `requirepass` written only to that site's
+  `wp-config.php` — same credential-based isolation model as MariaDB.
+  No site-count cap from Redis anymore, since nothing is shared.
 - **Firewall / brute-force**: ufw allows only 22/80/443; fail2ban watches
   sshd and nginx.
 
@@ -141,7 +143,7 @@ raw scripts still work exactly the same if you prefer them
 - `templates/nginx-vhost-http.conf.template` — vhost used before a cert exists.
 - `templates/nginx-vhost-ssl.conf.template` — vhost swapped in after issuance.
 - `/etc/wpdeploy/sites.list` — the registry:
-  `domain|linux_user|db_name|redis_index|php_version|created_date`
+  `domain|linux_user|db_name|php_version|created_date`
 - `/etc/wpdeploy/config` — server-wide defaults (`DEFAULT_ADMIN_USER`,
   `DEFAULT_ADMIN_EMAIL`), set via `tod setup --admin-user/--admin-email`.
 
