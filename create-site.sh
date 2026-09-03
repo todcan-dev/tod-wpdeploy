@@ -231,7 +231,7 @@ sed \
     -e "s|__USER__|$LINUX_USER|g" \
     -e "s|__GROUP__|$LINUX_USER|g" \
     -e "s|__SOCKET__|$SOCKET|g" \
-    -e "s|__SITE_DIR__|$SITE_DIR|g" \
+    -e "s|__SITE_BASE__|$SITE_BASE|g" \
     "$TEMPLATE_DIR/php-fpm-pool.conf.template" > "$POOL_FILE"
 mark "fpm_pool:$POOL_FILE"
 systemctl reload "php${PHP_VERSION}-fpm"
@@ -301,6 +301,16 @@ $WP core download --quiet
 log "Writing wp-config.php (DB + Redis object cache constants)"
 $WP config create --dbname="$DB_NAME" --dbuser="$DB_USER" --dbpass="$DB_PASSWORD" \
     --dbhost=127.0.0.1 --skip-check --quiet
+
+# One directory above the nginx-served htdocs/ root -- WP core
+# (wp-settings.php) and WP-CLI both already fall back to looking exactly
+# one directory above the WordPress root when wp-config.php isn't found
+# in place, so every $WP call below still resolves it with no --path
+# change. Puts DB/Redis credentials structurally outside anything
+# nginx's `root __SITE_DIR__` can ever serve, even if the vhost's PHP
+# location block is ever misconfigured or disabled.
+mv "$SITE_DIR/wp-config.php" "$SITE_BASE/wp-config.php"
+
 $WP config set WP_REDIS_HOST 127.0.0.1 --type=constant --quiet
 $WP config set WP_REDIS_PORT 6379 --raw --type=constant --quiet
 $WP config set WP_REDIS_DATABASE "$REDIS_INDEX" --raw --type=constant --quiet

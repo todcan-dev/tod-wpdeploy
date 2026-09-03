@@ -101,13 +101,25 @@ raw scripts still work exactly the same if you prefer them
 ## Isolation model
 
 - **Linux**: each site is its own system user (`/usr/sbin/nologin`), owning
-  `/var/www/<domain>/htdocs` at `750`. nginx's `www-data` user is added to
-  that site's group so it can read static files; only that site's own
-  PHP-FPM pool (running as the site's user) can write to it.
+  `/var/www/<domain>` (site root) at `750`; `wp-config.php` lives directly
+  in that site root, one level above the nginx-served `htdocs/`. nginx's
+  `www-data` user is added to that site's group so it can read static files
+  under `htdocs/`; only that site's own PHP-FPM pool (running as the site's
+  user) can write to any of it.
 - **PHP-FPM**: one pool per site, own unix socket
-  (`/run/php/<user>.sock`), `open_basedir` scoped to the site directory,
+  (`/run/php/<user>.sock`), `open_basedir` scoped to the site's whole
+  directory tree (site root + `htdocs/`, not just nginx's served root),
   and `exec,shell_exec,system,passthru,proc_open,popen` disabled.
 - **nginx**: each vhost's `fastcgi_pass` points only at that site's socket.
+- **wp-config.php placement**: kept one directory above nginx's `root`
+  (`/var/www/<domain>/wp-config.php`, not `.../htdocs/wp-config.php`) —
+  the same hardening WordPress core and WP-CLI both support natively, no
+  extra config required. It doesn't hide the file from this site's own
+  PHP-FPM worker or a compromised plugin (`open_basedir` covers the whole
+  site root, and `www-data` still has OS-level group-read access either
+  way) — what it buys is that a broken or overly permissive nginx vhost
+  can never expose the raw file over HTTP, because nginx's serving root
+  structurally doesn't reach that far up.
 - **MariaDB**: bound to `127.0.0.1`, one database + one user per site,
   grants scoped to that database only, random password written only to
   that site's `wp-config.php`.

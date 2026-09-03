@@ -146,9 +146,11 @@ next free Redis index, and so on, then exits.
 
 1. Validates the domain and checks it's not already registered.
 2. Creates a dedicated, login-disabled Linux user for the site.
-3. Creates `/var/www/example.com/htdocs`, owned by that user.
+3. Creates `/var/www/example.com/` (site root, owned by that user) and
+   `/var/www/example.com/htdocs` inside it (nginx's served directory).
 4. Creates a PHP-FPM pool for the site with its own socket, confined to
-   that directory (`open_basedir`) with shell-exec functions disabled.
+   the site's whole directory (`open_basedir`, covering both the site
+   root and `htdocs/`) with shell-exec functions disabled.
 5. Creates a MariaDB database and a database user whose grants are
    scoped to that one database only.
 6. Picks the next free Redis DB index (0–15).
@@ -156,10 +158,20 @@ next free Redis index, and so on, then exits.
 8. Requests a Let's Encrypt certificate via acme.sh (this is the step
    that needs working DNS) and rewrites the vhost to serve HTTPS with an
    HTTP→HTTPS redirect.
-9. Downloads and installs WordPress via WP-CLI, wires up the DB and
-   Redis object cache constants in `wp-config.php`, and installs +
-   activates the Redis object cache plugin.
+9. Downloads and installs WordPress via WP-CLI, wires up the DB and Redis
+   object cache constants in `wp-config.php` (written one directory above
+   `htdocs/`, not inside it — WordPress and WP-CLI both look there
+   automatically, so this needs no special `--path` handling), and
+   installs + activates the Redis object cache plugin.
 10. Appends the site to `/etc/wpdeploy/sites.list`.
+
+`wp-config.php` deliberately lives in the site root, not inside
+`htdocs/` — that's the directory nginx actually serves, so keeping the
+DB/Redis credentials one level above it means a broken or overly
+permissive nginx vhost can never expose the file over HTTP, even though
+PHP-FPM (and a compromised plugin under it) can still reach it. This is
+the same placement WordPress core and WP-CLI already support natively —
+no site-specific configuration was needed to make it work.
 
 If anything fails along the way, everything created for that site up to
 that point is automatically rolled back (Linux user removed, database
@@ -271,7 +283,8 @@ the same if you ever want to call them directly.
   re-provision from scratch, remove it first: `tod site delete
   example.com`.
 - **Lost/forgot a generated admin password** — it was only ever printed
-  once. Reset it with:
+  once. Reset it with (`--path` still points at `htdocs/`; `wp` finds
+  `wp-config.php` one directory up automatically):
   `sudo -u <linux_user> wp --path=/var/www/<domain>/htdocs user update <admin_user> --user_pass='newpassword'`
 - **Need the MariaDB root password** — `sudo cat /etc/wpdeploy/.mysql_root`
   (root only).

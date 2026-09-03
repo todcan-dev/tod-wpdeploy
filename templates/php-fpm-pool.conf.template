@@ -20,10 +20,13 @@ pm.max_children = 5
 pm.process_idle_timeout = 10s
 pm.max_requests = 500
 
-; Confines every file operation this pool's PHP can do to its own site
-; directory (plus /tmp). A compromised plugin/theme cannot read or write
-; another site's wp-config.php, uploads, etc.
-php_admin_value[open_basedir] = __SITE_DIR__:/tmp
+; Confines every file operation this pool's PHP can do to its own site's
+; directory tree (__SITE_BASE__, one level above the nginx-served htdocs/,
+; so wp-config.php can live outside anything nginx's `root` can ever
+; reach) plus /tmp. Still exclusively this one site's files -- a
+; compromised plugin/theme cannot read or write another site's
+; wp-config.php, uploads, etc.
+php_admin_value[open_basedir] = __SITE_BASE__:/tmp
 
 ; Blocks the shell-out/fork functions most WordPress malware relies on for
 ; persistence and lateral movement. If a specific plugin legitimately needs
