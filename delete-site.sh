@@ -132,6 +132,11 @@ rm -f "/etc/redis/redis-${LINUX_USER}.conf" "/var/log/redis/redis-server-${LINUX
 
 log "Removing the Linux user and site directory"
 if id "$LINUX_USER" >/dev/null 2>&1; then
+    # userdel won't remove the site's group while www-data is still a
+    # member of it (added at creation for static-file access) -- drop
+    # that membership first so the group goes with the user instead of
+    # lingering forever.
+    gpasswd -d www-data "$LINUX_USER" >/dev/null 2>&1 || true
     userdel -r "$LINUX_USER" 2>/dev/null || FAILED+=("userdel -r $LINUX_USER")
 fi
 rm -rf "$SITE_BASE"

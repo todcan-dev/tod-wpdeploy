@@ -197,6 +197,11 @@ cleanup() {
                 rm -rf "$val" 2>/dev/null || true
                 ;;
             linux_user)
+                # userdel won't remove the site's group while www-data is
+                # still a member of it (added in step 4 for static-file
+                # access) -- drop that membership first so the group goes
+                # with the user instead of lingering forever.
+                gpasswd -d www-data "$val" >/dev/null 2>&1 || true
                 userdel -r "$val" 2>/dev/null || true
                 ;;
         esac
